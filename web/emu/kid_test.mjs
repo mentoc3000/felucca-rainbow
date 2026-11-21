@@ -610,9 +610,63 @@ check("PLAY again stops it", ex.web_playing() === 0);
   algo(-1); algo(-1); algo(-1); algo(-1); algo(-1); algo(-1); algo(-1); render(1500);
 }
 
+// Use a separate device for gestures that can leave Rainbow.
+const newDevice = async (nor, binary = fs.readFileSync(wasmPath)) => {
+  const e = (await WebAssembly.instantiate(binary, {})).instance.exports;
+  e._initialize();
+  if (nor) new Uint8Array(e.memory.buffer, e.web_nor(), e.web_nor_size()).set(nor);
+  else e.web_nor_erase();
+  e.web_boot();
+  e.web_master(1023);
+  const run = (ms) => {
+    for (let k = 0; k < Math.round(ms * 44.1); k += 128) e.web_render(128);
+  };
+  const buttons = (mask, ms = 60) => { e.web_buttons(mask); run(ms); };
+  const tap = (button) => { buttons(1 << button); buttons(0, 250); };
+  const key = (k) => { e.web_keys(1 << k); run(100); e.web_keys(0); run(100); };
+  const image = () => new Uint8Array(e.memory.buffer, e.web_nor(), e.web_nor_size()).slice();
+  run(550);
+  return { e, run, buttons, tap, key, image };
+};
+
+async function checkWriteNavigation() {
+  const { e, buttons, tap, key } = await newDevice();
+  const lit = (b) => !!((e.web_lit_buttons() >> b) & 1);
+  check("power-on: Rainbow play with HOME lit", e.web_kid_view() === 0 && lit(B.HOME));
+  tap(B.SAVE);
+  check("SAVE selects WRITE and lights it", e.web_kid_view() === 1 && lit(B.SAVE) && !lit(B.HOME));
+  key(7);
+  const note = e.web_kid_wnote(0, 0);
+  tap(B.PLAY); tap(B.SAVE);
+  check("SAVE in WRITE leaves the song playing", e.web_kid_view() === 1 && e.web_playing() === 1);
+  tap(B.HOME);
+  check("HOME leaves WRITE and stops the song", e.web_kid_view() === 0 && e.web_playing() === 0);
+  tap(B.SAVE);
+  check("WRITE reopens with its note", e.web_kid_view() === 1 && note !== 0 && e.web_kid_wnote(0, 0) === note);
+  const limit = e.web_master_q12();
+  buttons(1 << B.HOME, 1200);
+  buttons((1 << B.HOME) | (1 << B.OCTDN));
+  buttons(0, 250);
+  check("HOME hold adjusts volume from WRITE and keeps WRITE open", e.web_kid_view() === 1 && e.web_master_q12() < limit);
+}
+
+await checkWriteNavigation();
+
+for (const [fromWrite, first] of [[false, B.SAVE], [true, B.HOME]]) {
+  const { e, buttons, tap } = await newDevice();
+  if (fromWrite) tap(B.SAVE);
+  buttons(1 << first, 140);
+  buttons((1 << B.HOME) | (1 << B.SAVE), 1200);
+  check("exit chord does not change Rainbow view before the hold",
+        e.web_kid_active() && e.web_kid_view() === Number(fromWrite));
+  buttons((1 << B.HOME) | (1 << B.SAVE), 2100);
+  buttons(0, 400);
+  check("exit chord reaches full synth and release keeps it there", !e.web_kid_active() && !e.web_playing());
+}
+
 // WRITE (SAVE): the child's own song. A key writes a note (a friend in a ball of the note's color) and the column moves on, the
-// same key again takes it out, HOME wipes the column, PLAY plays it back, it is kept over a power-off, REC held 2 s
-// starts a new one, and SAVE goes back to playing
+// same key again takes it out, REC wipes the column, PLAY plays it back, and it is kept over a power-off. REC held 2 s
+// starts a new song. HOME goes back to playing.
 {
   const col = (r, g, b) => ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
   const C_RED = col(236, 40, 52), G_TEAL = col(30, 176, 150), A_PUR = col(146, 84, 226);
@@ -633,8 +687,8 @@ check("PLAY again stops it", ex.web_playing() === 0);
   key(16);
   check("the same key again takes its note out", ball(3, 5) !== A_PUR);
   key(14);                                                                    // a G there instead, then column 4
-  tapb(B.OCTDN); tapb(B.HOME);                                                // HOME wipes column 3
-  check("HOME wipes the column", ball(3, 4) !== G_TEAL && ball(2, 4) === G_TEAL);
+  tapb(B.OCTDN); tapb(B.REC);                                                 // REC wipes column 3
+  check("REC tap wipes only the selected column", ball(3, 4) !== G_TEAL && ball(2, 4) === G_TEAL);
   ex.web_keys((1 << 7) | (1 << 11)); render(150); ex.web_keys(0); render(250);   // C and E together: one column
   check("two keys together: a chord in one column", ball(3, 0) === C_RED && ball(3, 2) !== ball(3, 1));
   peak = 0;
@@ -656,10 +710,12 @@ check("PLAY again stops it", ex.web_playing() === 0);
   const p2 = (x, y) => { const v = new Uint16Array(e2.memory.buffer, e2.web_screen(), 240 * 240)[y * 240 + x]; return ((v & 255) << 8) | (v >> 8); };
   check("kept over a power-off: the next start's WRITE has the song", p2(46 + 10, 128 + 9) === C_RED && p2(46 + 2 * 23 + 10, 128 - 24 + 9) === G_TEAL);
   check(`..and its beat (${wb}, as written)`, wb >= 16 && e2.web_kid_wbeat() === wb);
-  tapb(B.REC, 2300);
+  ex.web_buttons(1 << B.REC); render(1850);
+  check("REC hold has not erased a column before two seconds", ball(0, 0) === C_RED && ball(2, 4) === G_TEAL);
+  render(450); ex.web_buttons(0); render(250);
   check("REC held 2 s: a new, empty song", ball(0, 0) !== C_RED && ball(2, 4) !== G_TEAL);
   // loop and layer: PLAY on an empty song is a loop of two bars; a key is written where the beat is, to be heard the next
-  // time round; PRESETS another friend for another layer; HOME wipes the column that is playing
+  // time round; PRESETS another friend for another layer; REC wipes the column that is playing
   tapb(B.PLAY); render(700);
   check("WRITE, PLAY on an empty song: a loop of two bars (8 columns) to play into", ex.web_playing() === 1 && ex.web_kid_wlen() === 8);
   key(7); render(200);
@@ -674,8 +730,8 @@ check("PLAY again stops it", ex.web_playing() === 0);
   check(`..and heard the next time round, with no key pressed (peak ${peak.toFixed(3)})`, peak > 0.02);
   const col1 = [...Array(32).keys()].find((c) => ex.web_kid_wnote(c, 0) || ex.web_kid_wnote(c, 1));
   for (let i = 0; i < 600 && ex.web_kid_wat() !== col1; i++) render(10);
-  tapb(B.HOME); render(100);
-  check("..HOME while it plays wipes the column that is playing (one of the two notes is left)", notes().length === 1);
+  tapb(B.REC); render(100);
+  check("..REC tap while it plays wipes the column that is playing (one of the two notes is left)", notes().length === 1);
   tapb(B.PLAY); render(300);
   tapb(B.REC, 2300);
   check("..a new song: empty again, a loop of one bar", notes().length === 0 && ex.web_kid_wlen() === 4);
@@ -686,8 +742,8 @@ check("PLAY again stops it", ex.web_playing() === 0);
   for (let s = 0; s < 3; s++) if (ex.web_step(s, 0) >> 8) drum = ex.web_step(s, 0);
   check(`a drum friend's note is the drum its key plays (a kick hit, not a pitch: ${drum.toString(16)})`, drum > 0 && ((drum >> 8) & 1) === 1);
   tapb(B.REC, 2300);
-  tapb(B.SAVE); render(1800);
-  check("SAVE again: back to playing (the friend's name, SAVE dark)", !((ex.web_lit_buttons() >> B.SAVE) & 1) && band() !== "");
+  tapb(B.HOME); render(1800);
+  check("HOME: back to playing (the friend's name, SAVE dark)", !((ex.web_lit_buttons() >> B.SAVE) & 1) && band() !== "");
   key(12); render(300);
   check("and the keys play as before", peak > 0.05);
 }

@@ -9,7 +9,7 @@
  *   faders 1..4  BIG / SMALL, DAY / NIGHT, ECHO, WIGGLE (as KNOB 1..4); a fader takes over once it moves
  *   pitch wheel  a slide of +-2 semitones (seq.c smk_wheels_block: the channel's bend range)
  *   mod wheel    adds to WIGGLE
- *   KNOB BANK    a surprise friend (as HOME tapped); FADER BANK the next sky (as REC); < > the friend before / after
+ *   FADER BANK  the next sky (as REC); < > the friend before / after
  *   K1           MASTER, never above the grown-ups' VOLUME (kid_master)
  * No menu is reachable from the toy; HOME held 1 s and HOME + SAVE held 3 s stay the grown-ups' (kid.c). */
 
@@ -53,17 +53,7 @@ static int kid_smk_input(uint32_t pressed)
         kid_smk_lr = 1;
     else if (((pressed >> SMK_BTN_LEFT) & 1u) && smk_btn_free(SMK_BTN_LEFT))
         kid_smk_lr = -1;
-    if (((pressed >> SMK_BTN_KNOB_BANK) & 1u) && smk_btn_free(SMK_BTN_KNOB_BANK)) {   /* a surprise friend */
-        any = 1;
-        if (kw.on) {                              /* (WRITE: the friend to write with) */
-            kid.fr = (uint8_t)((kid.fr + 1u + rng() % (KID_N - 1u)) % KID_N);
-            kw_stamp(kid.fr);
-        } else {
-            kid_friend(kid.fr + 1u + rng() % (KID_N - 1u));
-        }
-        kid.party_ms = fm1_ms | 1u;
-    }
-    if (((pressed >> SMK_BTN_FADER_BANK) & 1u) && smk_btn_free(SMK_BTN_FADER_BANK) && !kw.on) {   /* the next sky */
+    if (((pressed >> SMK_BTN_FADER_BANK) & 1u) && smk_btn_free(SMK_BTN_FADER_BANK) && !KW_ON) {   /* the next sky */
         any = 1;
         kid.scene = (uint8_t)((kid.scene + 1u) % KS_COUNT);
         kid.full = 1;
@@ -81,7 +71,7 @@ static int kid_smk_input(uint32_t pressed)
         last[i] = (uint8_t)v;
         any = 1;
         if (i == 0u) {                            /* BIG / SMALL: low notes at the bottom, a big friend */
-            if (!kw.on) {
+            if (!KW_ON) {
                 kid_size((int32_t)(v * 5u / 128u) - 2 - kid.oct);
                 kid.acc = 0;
             }
@@ -93,7 +83,7 @@ static int kid_smk_input(uint32_t pressed)
             }
             kid_knobs();
             kid_hint(KH_NIGHT);
-        } else if (!kw.on) {                      /* ECHO, WIGGLE */
+        } else if (!KW_ON) {                      /* ECHO, WIGGLE */
             *(i == 2u ? &kid.echo : &kid.wiggle) = (uint8_t)(v * 9u / 128u);
             kid_knobs();
             kid_hint(i == 2u ? KH_ECHO : KH_WIGGLE);
@@ -131,8 +121,9 @@ static void kid_smk_leds(void)
     uint32_t k, c, lit = kid_lit_mask(fm1_ms);
     for (k = 0; k < KX_COUNT; k++)
         led_put(nl, panel.btn[KID_FX_BTN[k]], (kid.fx >> k) & 1u);
-    led_put(nl, panel.btn[B_ARP], kid.arp && !kw.on);
-    led_put(nl, panel.btn[B_SAVE], kw.on);        /* (WRITE: SAVE lit) */
+    led_put(nl, panel.btn[B_ARP], kid.arp && !KW_ON);
+    led_put(nl, panel.btn[B_HOME], kid.view == KV_PLAY);
+    led_put(nl, panel.btn[B_SAVE], KW_ON);        /* (WRITE: SAVE lit) */
     led_put(nl, panel.btn[B_PLAY], song.playing);
     for (c = 0; c < SMK_NLED; c++)
         fm1_led[c] = nl[c];

@@ -464,6 +464,7 @@ typedef struct {
 /* a note's value by how long it was held, against the beat (a quarter note): a sixteenth, an eighth, a quarter, a half,
  * a whole (suggested by r/MVaveFM1's u/theskyisfalling1, CREDITS.md) */
 enum { KT_16TH, KT_8TH, KT_4TH, KT_HALF, KT_WHOLE };
+typedef enum { KV_PLAY, KV_WRITE, KV_DRUMS } kid_view_t;
 
 static struct {
     uint8_t on, ready, fr, scene, beat, chord, arp, night, echo, wiggle;
@@ -481,7 +482,10 @@ static struct {
     uint32_t c_held, c_yes_ms;          /* .. the keys held when last looked, the last YES */
     int8_t oct;                         /* -2 .. 2: song.octave; the friend's size follows */
     int8_t acc;                         /* KNOB 1: detents toward the next octave */
-    uint8_t hint, home_down;
+    kid_view_t view, next_view;
+    uint8_t play_fr, play_beat, play_scene;
+    int16_t play_bpm;
+    uint8_t hint, home_down, save_down;
     uint8_t fx, fxk;                    /* the top row's effect that is on (a KX_* bit, or 0), the one tapped last */
     uint8_t rearm;                      /* the looping effects let go for a new note, to be pressed again (kid_input) */
     uint8_t st_n;                       /* the staff's entries (st), oldest first */
@@ -515,7 +519,9 @@ static struct {
     /* (the times stored as fm1_ms | 1 are compared from now | 1: never "in the future") */
     uint32_t band_sig, pic_sig;         /* what the band and the picture last showed */
     int16_t bx0, by0, bx1, by1;         /* the area the friends covered last frame */
-} kid = {1};
+} kid = {.on = 1};
+
+#define KW_ON (kid.view == KV_WRITE)
 
 /* WRITE (SAVE): the child's own song, as Mario Paint's composer did it. A column a beat, 32 of them (4 pages of 8), at most two
  * notes a column; each note is one of the band's three friends (a friend a track: trk[0..2], the drums on trk[3]),
@@ -525,10 +531,11 @@ static struct {
 #define KW_PAGE 8u
 #define KW_SAVE_MS 4000u                /* saved this long after the last change (while stopped), and on leaving */
 static struct {
-    uint8_t on, cur, stamp, adv, dirty, beat, loaded, clear_on;
+    uint8_t cur, stamp, adv, dirty, beat, loaded, clear_on;
     uint8_t floor;                      /* the loop is at least this many columns (a new song played empty: two bars, to play into) */
     uint8_t band[3];                    /* the friend of each track 0..2, 0xFF none */
     uint8_t note[KW_COLS][2];           /* (track << 5) | (key + 1), 0 empty */
+    int16_t bpm;
     uint32_t edit_ms, clear_ms;
     uint32_t sig, col_ms;               /* the page drawn last; when the playing column changed */
     int16_t col, hx, hy;                /* the playing column drawn last (-1 none); where the hopping friend was */
@@ -651,7 +658,7 @@ static void kid_knobs(void)                       /* the knobs' state into the f
 {
     track_t *t = &trk[0];
     perf_k[0] = (int8_t)-(kid.night * 8);         /* the FX filter: night closes it to ~700 Hz */
-    if (kw.on) {                                  /* (WRITE: track 1 is the band's, as written) */
+    if (KW_ON) {                                  /* (WRITE: track 1 is the band's, as written) */
         kb_sub_on = 0;
         kid.sub_ready = 0;
         return;
@@ -771,7 +778,7 @@ static void kid_beat_load(void)
                 if (b->lane[l][i] == 'x')
                     grid_hit(t, i, l, 1);
     }
-    if (kw.on) {                                  /* WRITE: the drums only (tracks 1 and 2 are the band's), and */
+    if (KW_ON) {                                  /* WRITE: the drums only (tracks 1 and 2 are the band's), and */
         t->p[P_MUTE] = !kw.beat;                  /* the song's tempo */
         return;
     }
@@ -957,6 +964,7 @@ static int autosave_boot(int allowed);           /* (project.c) */
 /* HOME + SAVE held: the full Felucca, with the music of the last session (the autosave, which the toy never
  * writes: main.c skips autosave_poll while Rainbow mode is on) */
 static void kw_leave(void);
+static void kid_restore_play(void);
 static int32_t kw_at(void);
 static void kid_mode_set(uint32_t m);
 
@@ -967,8 +975,11 @@ static void kid_leave(void)
         kid.star_dirty = 0;
         settings_save();
     }
-    if (kw.on)
+    if (KW_ON) {
         kw_leave();
+        kid.view = KV_PLAY;
+        kid_restore_play();
+    }
     kid_mode_set(KM_ONE);                         /* (the keys back to their own notes: STRUM off) */
     kid.on = 0;
     kid_key_apply();                              /* (the full Felucca plays in its own key) */
@@ -1252,7 +1263,7 @@ static void kw_pack(void)
     kw_bits_put(&at, 3, 4);                                      /* (version 3: the beat in 5 bits; 2 had 4, and a band friend in 7: 1 had 6) */
     for (i = 0; i < 3u; i++)
         kw_bits_put(&at, kw.band[i] == 0xFFu ? 0u : kw.band[i] + 1u, 7);
-    kw_bits_put(&at, (uint32_t)clamp((song.g[G_BPM] - 60) / 5, 0, 24), 5);
+    kw_bits_put(&at, (uint32_t)clamp((kw.bpm - 60) / 5, 0, 24), 5);
     kw_bits_put(&at, kw.beat, 5);
     for (c = 0; c < KW_COLS; c++) {
         uint32_t a = kw.note[c][0], b = kw.note[c][1];
@@ -1279,7 +1290,7 @@ static void kw_unpack(void)
         v = kw_bits_get(&at, ver >= 2u ? 7u : 6u);               /* (a song saved before 63 friends: 6 bits) */
         kw.band[i] = v && v <= KID_N ? (uint8_t)(v - 1u) : 0xFFu;
     }
-    song.g[G_BPM] = (int16_t)(60 + 5 * (int32_t)kw_bits_get(&at, 5));
+    kw.bpm = (int16_t)(60 + 5 * (int32_t)kw_bits_get(&at, 5));
     v = kw_bits_get(&at, ver >= 3u ? 5u : 4u);                   /* (a song saved before 16 beats: 4 bits) */
     kw.beat = (uint8_t)(v <= KB_COUNT ? v : 0u);
     for (c = 0; c < KW_COLS; c++) {
@@ -1398,58 +1409,60 @@ static void kw_stamp(uint32_t fr)
 static void kw_enter(void)
 {
     uint32_t s;
-    kb_sub_on = 0;                                /* (WRITE: track 3 is a band friend's) */
+    kb_sub_on = 0;
     kid.sub_ready = 0;
-    if (song.playing || chain_busy())
-        transport_req = 2;
     if (!kw.loaded) {
-        int16_t bpm = song.g[G_BPM];
+        kw.bpm = song.g[G_BPM];
         kw_unpack();
-        if (kw.band[0] == 0xFFu && kw.band[1] == 0xFFu && kw.band[2] == 0xFFu)
-            song.g[G_BPM] = bpm;                                  /* (a new song: the tempo it had) */
         kw.loaded = 1;
     }
-    kw.on = 1;
-    kb_strum = kb_accord = 0;
-    kid.acc_fr = 0xFF;                                            /* (track 3 is the band's now) */
+    kb_strum = kb_accord = kb_accord_trk = 0;
+    kid.acc_fr = 0xFF;
     kw.col = -1;
     kw.sig = 0;
-    kid.key = -1;
-    kid.st_n = 0;
-    song.octave = 0;                                              /* (written as it is heard) */
+    song.octave = 0;
     for (s = 0; s < 3u; s++)
         kw_track_sound(s);
+    if (kw.band[kw.stamp] != 0xFFu)
+        kid.fr = kw.band[kw.stamp];
+    else
+        for (s = 0; s < 3u; s++)
+            if (kw.band[s] != 0xFFu) {
+                kid.fr = kw.band[s];
+                break;
+            }
     kw_stamp(kid.fr);
-    kw.dirty = 0;
     if (kw.beat)
         kid.beat = (uint8_t)(kw.beat - 1u);
-    kid_beat_load();                                              /* (the drums only, muted without a beat) */
+    kid_beat_load();
+    song.g[G_BPM] = kw.bpm;
     kw_commit();
-    kid.full = 1;
 }
 
 static void kw_leave(void)
 {
     uint32_t s;
-    if (song.playing || chain_busy())
-        transport_req = 2;
     kw_save();
-    kw.on = 0;
-    kw.floor = 0;
-    kb_strum = kid.mode == KM_STRUM;
-    kb_accord = kid.mode == KM_ACCORD;
+    kw.clear_on = kw.adv = kw.floor = 0;
     for (s = 0; s < 3u; s++) {
         track_defaults_steps(&trk[s]);
-        trk[s].p[P_SDIV] = 2;
-        trk[s].p[P_SLEN] = 16;
         trk[s].p[P_MUTE] = 0;
     }
+}
+
+static void kid_restore_play(void)
+{
     song.sel = 0;
-    kid.bass_ready = 0;                                           /* the bass sound back on track 2 */
-    kid.beat = KID_SOUND[kid.fr].beat;
+    kid.fr = kid.play_fr;
+    kid.beat = kid.play_beat;
+    kid.scene = kid.play_scene;
+    kid.bass_ready = 0;
+    kb_strum = kid.mode == KM_STRUM;
+    kb_accord = kid.mode == KM_ACCORD;
     kid_beat_load();
+    song.g[G_BPM] = kid.play_bpm;
     kid_sound();
-    kid.full = 1;
+    kid.c_held = fm1_in.notes;
 }
 
 /* WRITE's keys: a key writes its note into the column (with the stamp friend), the same key again takes it out; the
@@ -1721,7 +1734,7 @@ static void kid_cheer_stop(void)
 
 static void kid_cheer(uint32_t big)
 {
-    if (kw.on || !kid_sub_level(kid.fr))
+    if (KW_ON || !kid_sub_level(kid.fr))
         return;
     kid_cheer_off();
     kid.cheer_n = (uint8_t)(big ? 4u : 2u);
@@ -1878,13 +1891,13 @@ static void kid_mode_set(uint32_t m)
     kid.c_pos = kid.c_ok = 0;
     kid.c_held = fm1_in.notes;
     kid.c_yes_ms = 0;
-    if ((was == KM_CHORDS && kid.c_beat) || (kid.mode == KM_CHORDS && kid.beat == KB_LOFI && !kw.on))
+    if ((was == KM_CHORDS && kid.c_beat) || (kid.mode == KM_CHORDS && kid.beat == KB_LOFI && !KW_ON))
         kid_beat_load();                                          /* (CHORDS' bass: the lesson's roots, or back) */
     if (kid.mode != KM_ACCORD && kid.arp > 1u)                    /* (SPARKLE ALL is ACCORDION's: elsewhere SPARKLE) */
         kid.arp = 1;
     kid.chord = kid.mode == KM_CHOIR;
-    kb_strum = kid.mode == KM_STRUM && !kw.on;
-    kb_accord = kid.mode == KM_ACCORD && !kw.on;
+    kb_strum = kid.mode == KM_STRUM && !KW_ON;
+    kb_accord = kid.mode == KM_ACCORD && !KW_ON;
     kid.g_state = KG_IDLE;
     kid.g_ms = fm1_ms + 900u;                                     /* (GUESS: the first note in a moment) */
     kid.g_level = kid.g_streak = kid.g_wrong = kid.g_again = 0;
@@ -2003,7 +2016,7 @@ static int32_t kid_lit_key(uint32_t now)                         /* the key to l
 static uint32_t kid_lit_mask(uint32_t now)                       /* the keys to light: CHORDS' chord, or kid_lit_key's */
 {
     int32_t k;
-    if (kid.mode == KM_CHORDS && !kw.on) {
+    if (kid.mode == KM_CHORDS && !KW_ON) {
         if (kid.c_beat && song.playing && trk[1].seq_idx % 16u >= 12u)   /* the bar's last beat: the next chord, blinking */
             return (now / 150u) & 1u ? kid_lesson_chord(kid.c_lesson, (kid.c_pos + 1u) % KID_LESSON_LEN, 0, 0, 0) : 0u;
         return kid.c_ok ? 0u : kid_lesson_chord(kid.c_lesson, kid.c_pos, 0, 0, 0);
@@ -2012,10 +2025,54 @@ static uint32_t kid_lit_mask(uint32_t now)                       /* the keys to 
     return k >= 0 ? 1u << k : 0u;
 }
 
+static void kid_switch(kid_view_t next)
+{
+    kid.next_view = next;
+}
+
+static int kid_switch_pending(void)
+{
+    if (kid.view == kid.next_view)
+        return 0;
+    if (transport_busy()) {
+        transport_req = 2;
+        return 1;
+    }
+    if (kid.view == KV_PLAY) {
+        kid.play_fr = kid.fr;
+        kid.play_beat = kid.beat;
+        kid.play_scene = kid.scene;
+        kid.play_bpm = song.g[G_BPM];
+        kid_cheer_stop();
+        if (kid.mode == KM_COPY)
+            kid_copy_again(fm1_ms, 900u);
+        if (kid.mode == KM_GUESS && kid.g_state == KG_SING) {
+            kid_sing(kid.g_note, 0);
+            kid.g_again = 1;
+            kid.g_state = KG_IDLE;
+            kid.g_ms = fm1_ms + 900u;
+        }
+    } else if (KW_ON) {
+        kw_leave();
+    }
+    panic_req = (1u << NTRK) - 1u;
+    kid.view = kid.next_view;
+    if (KW_ON)
+        kw_enter();
+    else
+        kid_restore_play();
+    kid.key = -1;
+    kid.st_n = 0;
+    kid.hint = KH_NONE;
+    kid.help_ms = kid.hello_ms = 0;
+    kid.full = 1;
+    return 1;
+}
+
 static void kid_input(void)
 {
     uint32_t pressed = fm1_input_edges(0), notes = fm1_input_note_edges(), held = fm1_in.buttons, id, k;
-    uint32_t home = 1u << panel.btn[B_HOME], both = home | (1u << panel.btn[B_SAVE]);
+    uint32_t home = 1u << panel.btn[B_HOME], save = 1u << panel.btn[B_SAVE], both = home | save;
     int32_t s;
     uint32_t any = pressed | notes;
     fm6_poll();
@@ -2052,11 +2109,11 @@ static void kid_input(void)
             }
         switch (b) {
         case B_PLAY:
-            if (kid.mode == KM_COPY && !kw.on) {  /* COPY ME: the pattern again */
+            if (kid.mode == KM_COPY && !KW_ON) {  /* COPY ME: the pattern again */
                 kid_copy_again(fm1_ms, 100u);
                 break;
             }
-            if (kid.mode == KM_GUESS && !kw.on) { /* GUESS: the note again */
+            if (kid.mode == KM_GUESS && !KW_ON) { /* GUESS: the note again */
                 if (kid.g_state == KG_SING)
                     kid_sing(kid.g_note, 0);
                 kid.g_again = kid.g_state != KG_IDLE || kid.g_again;
@@ -2067,11 +2124,11 @@ static void kid_input(void)
             if (song.playing || chain_busy()) {
                 transport_req = 2;
             } else {
-                if (kid.mode == KM_CHORDS && !kw.on && kid.beat != KB_LOFI) {   /* CHORDS: practice over the LOFI beat */
+                if (kid.mode == KM_CHORDS && !KW_ON && kid.beat != KB_LOFI) {   /* CHORDS: practice over the LOFI beat */
                     kid.beat = KB_LOFI;
                     kid_beat_load();
                 }
-                if (kw.on && kw_empty()) {            /* WRITE, nothing written yet: a loop of two bars to play into */
+                if (KW_ON && kw_empty()) {            /* WRITE, nothing written yet: a loop of two bars to play into */
                     kw.floor = 8;
                     kw_commit();
                 }
@@ -2081,7 +2138,7 @@ static void kid_input(void)
             }
             break;
         case B_ARP:
-            if (kw.on)
+            if (KW_ON)
                 break;
             kid.arp = (uint8_t)(kid.mode == KM_ACCORD && !drum_track(&trk[0]) ? (kid.arp + 1u) % 3u : !kid.arp);   /* (ACCORDION:
                                                   * SPARKLE TUNE, SPARKLE ALL, off) */
@@ -2089,7 +2146,7 @@ static void kid_input(void)
             kid_hint(KH_SPARKLE);
             break;
         case B_SEQ:
-            if (kid.mode == KM_CHORDS && !kw.on) {   /* CHORDS: the next lesson */
+            if (kid.mode == KM_CHORDS && !KW_ON) {   /* CHORDS: the next lesson */
                 kid.c_lesson = (uint8_t)((kid.c_lesson + 1u) % KID_NLESSONS);
                 kid.c_pos = kid.c_ok = 0;
                 kid.c_held = fm1_in.notes;
@@ -2098,7 +2155,7 @@ static void kid_input(void)
                 kid_hint(KH_SONG);
                 break;
             }
-            if (kid.mode == KM_FOLLOW && !kw.on) {   /* FOLLOW: the next song */
+            if (kid.mode == KM_FOLLOW && !KW_ON) {   /* FOLLOW: the next song */
                 kid.f_song = (uint8_t)((kid.f_song + 1u) % KID_NSONGS);
                 kid.f_pos = 0;
                 kid.f_done_ms = 0;
@@ -2106,7 +2163,7 @@ static void kid_input(void)
                 kid_hint(KH_SONG);
                 break;
             }
-            if (kw.on) {                          /* WRITE: no beat, then each of them */
+            if (KW_ON) {                          /* WRITE: no beat, then each of them */
                 kw.beat = (uint8_t)((kw.beat + 1u) % (KB_COUNT + 1u));
                 if (kw.beat)
                     kid.beat = (uint8_t)(kw.beat - 1u);
@@ -2119,7 +2176,7 @@ static void kid_input(void)
             kid_hint(KH_BEAT);
             break;
         case B_REC:                               /* the next sky, with a party; WRITE: held 2 s, a new song */
-            if (kw.on) {
+            if (KW_ON) {
                 kw.clear_on = 1;
                 kw.clear_ms = fm1_ms | 1u;
                 break;
@@ -2132,14 +2189,8 @@ static void kid_input(void)
             kid.hop_ms = fm1_ms;
             kid_cheer(0);
             break;
-        case B_SAVE:                              /* WRITE: the child's song, and back (not with HOME: that leaves) */
-            if (held & home)
-                break;
-            if (kw.on)
-                kw_leave();
-            else
-                kw_enter();
-            kid.party_ms = fm1_ms | 1u;
+        case B_SAVE:
+            kid.save_down = 1;
             break;
         case B_HOME:
             kid.home_down = 1;
@@ -2150,7 +2201,7 @@ static void kid_input(void)
         case B_OCTUP:
             if (kid.vol_open)
                 kid_vol_step(b == B_OCTUP ? 1 : -1);
-            else if (kw.on) {                     /* WRITE: the column back / on */
+            else if (KW_ON) {                     /* WRITE: the column back / on */
                 kw.cur = (uint8_t)((kw.cur + (b == B_OCTUP ? 1u : KW_COLS - 1u)) % KW_COLS);
                 kw.adv = 0;
             } else
@@ -2170,7 +2221,7 @@ static void kid_input(void)
         kid.hop_ms = fm1_ms;
     }
     if ((held & both) == both) {                  /* HOME + SAVE held 3 s: the full Felucca */
-        kid.home_down = 0;
+        kid.home_down = kid.save_down = 0;
         if (!kid.exit_ms)
             kid.exit_ms = fm1_ms | 1u;
         else if ((fm1_ms | 1u) - kid.exit_ms > KID_EXIT_MS) {
@@ -2193,22 +2244,23 @@ static void kid_input(void)
             kid.hint_ms = fm1_ms - 800u;          /* (a moment more, then the name again) */
         kid.vol_open = kid.vol_hold = 0;
     }
-    if (kid.home_down && !(held & home)) {        /* HOME let go: a surprise friend (WRITE: the column wiped) */
+    if (kid.home_down && !(held & home)) {
         kid.home_down = 0;
-        if (kw.on) {                              /* (playing: the column being played) */
-            uint32_t c = song.playing ? (uint32_t)kw_at() % KW_COLS : kw.cur;
+        kid_switch(KV_PLAY);
+    }
+    if (kid.save_down && !(held & save)) {
+        kid.save_down = 0;
+        kid_switch(KV_WRITE);
+    }
+    if (kid_switch_pending())
+        return;
+    if (KW_ON) {
+        if (kw.clear_on && !((held >> panel.btn[B_REC]) & 1u)) {
+            uint32_t c = (uint32_t)kw_at() % KW_COLS;
+            kw.clear_on = 0;
             kw.note[c][0] = kw.note[c][1] = 0;
             kw_changed();
-        } else {
-            kid_friend(kid.fr + 1u + rng() % (KID_N - 1u));
-            kid.party_ms = fm1_ms | 1u;
-            kid_cheer(0);
-        }
-    }
-    if (kw.on) {
-        if (kw.clear_on && !((held >> panel.btn[B_REC]) & 1u))
-            kw.clear_on = 0;
-        if (kw.clear_on && (fm1_ms | 1u) - kw.clear_ms > 2000u) {  /* REC held 2 s: a new song */
+        } else if (kw.clear_on && (fm1_ms | 1u) - kw.clear_ms > 2000u) {
             kw.clear_on = 0;
             kw_clear();
             kid_hint(KH_NEWSONG);
@@ -2217,7 +2269,7 @@ static void kid_input(void)
         if (kw.dirty && !song.playing && fm1_ms - kw.edit_ms > KW_SAVE_MS)
             kw_save();
     }
-    if (kw.on) {                                  /* WRITE: a key writes (kw_notes), the column is left when all are up */
+    if (KW_ON) {                                  /* WRITE: a key writes (kw_notes), the column is left when all are up */
         if (notes)
             kw_notes(notes);
         if (kw.adv && !fm1_in.notes) {
@@ -2236,7 +2288,7 @@ static void kid_input(void)
                 }
             kid.rearm = (uint8_t)loop;
         }
-        if (!kw.on) {                             /* (WRITE: the big staff is the child's already) */
+        if (!KW_ON) {                             /* (WRITE: the big staff is the child's already) */
             for (k = 26u; notes >> k == 0u; k--)
                 ;
             kid.key = (int8_t)k;
@@ -2248,15 +2300,15 @@ static void kid_input(void)
             if (kid.mode != KM_STRUM && !drum_track(&trk[0]))   /* (STRUM, a drum friend: the keys are not notes) */
                 kid_staff_add(notes, fm1_ms);
         }
-    } else if (!kw.on && kid.key >= 0 && ((fm1_in.notes >> kid.key) & 1u)) {
+    } else if (!KW_ON && kid.key >= 0 && ((fm1_in.notes >> kid.key) & 1u)) {
         kid.key_ms = fm1_ms;                      /* (held: it stays) */
-    } else if (!kw.on && kid.key >= 0 && fm1_in.notes) {   /* let go with others held: the highest of them */
+    } else if (!KW_ON && kid.key >= 0 && fm1_in.notes) {   /* let go with others held: the highest of them */
         for (k = 26u; fm1_in.notes >> k == 0u; k--)
             ;
         kid.key = (int8_t)k;
         kid.key_ms = fm1_ms;
     }
-    if (!kw.on) {
+    if (!KW_ON) {
         uint32_t c = fm1_in.notes, nk = 0;
         int32_t lo = -1;
         for (k = 0; k < 27u; k++) {
@@ -2277,17 +2329,17 @@ static void kid_input(void)
         kid_look_set(s < 0);
     } else if (s != 0) {
         any = 1u;
-        if (kw.on) {                              /* WRITE: the friend to write with */
+        if (KW_ON) {                              /* WRITE: the friend to write with */
             kid.fr = (uint8_t)kid_next_friend(s);
             kw_stamp(kid.fr);
         } else {
             kid_friend(kid_next_friend(s));
         }
     }
-    if ((s = panel_enc(EN_ALGO)) != 0 && kid.vol_open && !kw.on) {   /* HOME held 1 s: the grown-ups' NAME */
+    if ((s = panel_enc(EN_ALGO)) != 0 && kid.vol_open && !KW_ON) {   /* HOME held 1 s: the grown-ups' NAME */
         kid_name_open();
         return;
-    } else if (s != 0 && !kw.on) {                /* how the keys play: a step a turn */
+    } else if (s != 0 && !KW_ON) {                /* how the keys play: a step a turn */
         any = 1u;
         kid_mode_set((uint32_t)clamp((int32_t)kid.mode + (s > 0 ? 1 : -1), 0, KM_COUNT - 1));
         kid_hint(KH_CHORD);
@@ -2306,6 +2358,11 @@ static void kid_input(void)
     if (s != 0) {
         any = 1u;
         song.g[G_BPM] = (int16_t)clamp(song.g[G_BPM] + s * 5, 60, 180);
+        if (KW_ON) {
+            kw.bpm = song.g[G_BPM];
+            kw.dirty = 1;
+            kw.edit_ms = fm1_ms;
+        }
         kid_hint(KH_SPEED);
     }
     s = panel_enc(EN_K1);                                         /* (read once: a read takes the turn) */
@@ -2318,7 +2375,7 @@ static void kid_input(void)
         kid_hint(KH_STAFF);
     } else
 #endif
-    if (s != 0 && !kw.on) {                      /* two detents an octave: a small hand turns a lot */
+    if (s != 0 && !KW_ON) {                      /* two detents an octave: a small hand turns a lot */
         any = 1u;
         kid.acc = (int8_t)clamp(kid.acc + s, -2, 2);
         if (kid.acc >= 2 || kid.acc <= -2) {
@@ -2354,7 +2411,7 @@ static void kid_input(void)
         kid_hint(KH_STARS);
     } else
 #endif
-    if (s != 0 && !kw.on) {
+    if (s != 0 && !KW_ON) {
         any = 1u;
         kid.echo = (uint8_t)clamp(kid.echo + s, 0, 8);
         kid_knobs();
@@ -2367,7 +2424,7 @@ static void kid_input(void)
         kid_hat_step(s);
     } else
 #endif
-    if (s != 0 && !kw.on) {
+    if (s != 0 && !KW_ON) {
         any = 1u;
         kid.wiggle = (uint8_t)clamp(kid.wiggle + s, 0, 8);
         kid_knobs();
@@ -2388,10 +2445,11 @@ static void kid_leds(void)
     uint32_t k, c, lit;
     for (k = 0; k < KX_COUNT; k++)
         led_put(nl, panel.btn[KID_FX_BTN[k]], (kid.fx >> k) & 1u);
-    led_put(nl, panel.btn[B_ARP], kid.arp && !kw.on);
-    led_put(nl, panel.btn[B_SEQ], (kid.mode == KM_FOLLOW || kid.mode == KM_CHORDS) && !kw.on);   /* (SEQ picks the song or
+    led_put(nl, panel.btn[B_ARP], kid.arp && !KW_ON);
+    led_put(nl, panel.btn[B_SEQ], (kid.mode == KM_FOLLOW || kid.mode == KM_CHORDS) && !KW_ON);   /* (SEQ picks the song or
                                                   * the lesson there: lit, so it is easy to find; u/jrej) */
-    led_put(nl, panel.btn[B_SAVE], kw.on);        /* (WRITE: SAVE lit) */
+    led_put(nl, panel.btn[B_HOME], kid.view == KV_PLAY);
+    led_put(nl, panel.btn[B_SAVE], KW_ON);        /* (WRITE: SAVE lit) */
     lit = kid_lit_mask(fm1_ms);
     for (k = 0; k < 27u; k++) {
         led_put(nl, 14u + k, (int)((fm1_in.notes >> k) & 1u) || (int)((lit >> k) & 1u));
@@ -2803,7 +2861,7 @@ static uint32_t kid_band_setup(uint32_t now)
     int hint = kid.hint != KH_NONE && now - kid.hint_ms < 1500u;
     kf.meter = -1;
     kf.ol = 2;
-    if (kw.on && !(hint && (kid.hint == KH_SPEED || kid.hint == KH_NIGHT || kid.hint == KH_VOLUME || kid.hint == KH_LOOK || kid.hint == KH_HAT || kid.hint == KH_KEY))) {
+    if (KW_ON && !(hint && (kid.hint == KH_SPEED || kid.hint == KH_NIGHT || kid.hint == KH_VOLUME || kid.hint == KH_LOOK || kid.hint == KH_HAT || kid.hint == KH_KEY))) {
         /* WRITE: the friend to write with, and a word */
         kf.band = KB_NAME;
         kf.txt = hint && kid.hint == KH_BEAT ? (kw.beat ? KID_BEATS[(kw.beat - 1u) % KB_COUNT].name : "NO BEAT") :
@@ -2813,7 +2871,7 @@ static uint32_t kid_band_setup(uint32_t now)
         kf.bg = RGB(150, 110, 230);
         kf.bg2 = RGB(120, 84, 200);
         sig = 0x500u ^ (uint32_t)(uintptr_t)kf.txt * 7u ^ (uint32_t)kw.band[kw.stamp % 3u] << 24;
-    } else if (!vol && !kw.on && (sig = kid_play_band(now)) != 0) {   /* (ALGORITHM's modes, a chord: all set) */
+    } else if (!vol && !KW_ON && (sig = kid_play_band(now)) != 0) {   /* (ALGORITHM's modes, a chord: all set) */
         return sig;
     } else if (!vol && kid.key >= 0 && now - kid.key_ms < 900u && drum_track(&trk[0]) && !kid.fx) {   /* a drum friend: */
         uint16_t c;                                                   /* the drum's name */
@@ -2919,7 +2977,7 @@ static uint32_t kid_band_setup(uint32_t now)
     w = len * KID_ADV * (uint32_t)kf.bt.sc - (uint32_t)kf.bt.sc;
     kf.bt.s = kf.txt;
     kf.bt.x = (int16_t)((240 - (int32_t)w) / 2);
-    if (kw.on && kf.band == KB_NAME)                      /* (WRITE: beside the friend) */
+    if (KW_ON && kf.band == KB_NAME)                      /* (WRITE: beside the friend) */
         kf.bt.x = (int16_t)(58 + (178 - (int32_t)w) / 2);
     kf.bt.y = (int16_t)(kf.band == KB_NOTE ? KID_BAND_Y + 5 : KID_BAND_Y + ((kf.band == KB_HINT ? 40 : 56) - 7 * kf.bt.sc) / 2 + 2);
     if (kf.bt.x < 4 && len < sizeof kf.l1) {              /* too wide even at 3: two lines, split at the middle space */
@@ -2986,7 +3044,7 @@ static uint32_t kid_band_icon(uint32_t sig)
     int32_t m = -1, pic = -1, w1, w2 = 0;
     kf.icon = -1;
     kf.pic = -1;
-    if (kw.on || kid.hello_ms)
+    if (KW_ON || kid.hello_ms)
         return sig;
     if (kf.band == KB_HINT && kid.hint == KH_SONG && kid.mode == KM_FOLLOW) {   /* FOLLOW's song, SEQ pressed: its picture */
         pic = (int32_t)kid_song_pic(kid.f_song);
@@ -3042,7 +3100,7 @@ static uint16_t kid_band_px(int32_t x, int32_t y)
         if (b)
             return KID_PAL[kf.pic][b];
     }
-    if (kw.on && kf.band == KB_NAME && x < 56 && y >= (int32_t)KID_BAND_Y + 5) {    /* WRITE: the stamp friend */
+    if (KW_ON && kf.band == KB_NAME && x < 56 && y >= (int32_t)KID_BAND_Y + 5) {    /* WRITE: the stamp friend */
         int32_t p = kw_sprite(kw.band[kw.stamp % 3u], x - 4, y - ((int32_t)KID_BAND_Y + 6), 48);
         if (p >= 0)
             return (uint16_t)p;
@@ -3911,7 +3969,7 @@ static void kid_paint(int32_t x0, int32_t y0, int32_t x1, int32_t y1)
             }
             for (x = x0; x < x1; x++)
                 *p++ = swap16(kid.name_on ? kid_name_px(x, yy)
-                              : yy < (int32_t)KID_BAND_Y ? (kw.on ? kw_px(x, yy) : kid_view_px(x, yy)) : kid_band_px(x, yy));
+                              : yy < (int32_t)KID_BAND_Y ? (KW_ON ? kw_px(x, yy) : kid_view_px(x, yy)) : kid_band_px(x, yy));
         }
         lcd_blit((uint32_t)x0, (uint32_t)y, w, (uint32_t)n, px);
         buf ^= 1u;
@@ -3998,7 +4056,7 @@ static void kid_draw(void)
         }
         kid_frame_setup(now);
     }
-    if (kw.on) {
+    if (KW_ON) {
         kw_draw(now, band);
         return;
     }

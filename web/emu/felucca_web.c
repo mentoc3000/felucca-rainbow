@@ -486,6 +486,8 @@ EXPORT uint32_t web_screen_draws(void) { return web_draws; }
 EXPORT uint32_t web_now_ms(void) { return fm1_ms; }
 EXPORT uint32_t web_playing(void) { return song.playing; }
 EXPORT int32_t web_lim_t(void) { return lim_t; }
+EXPORT uint32_t web_kid_view(void) { return (uint32_t)kid.view; }
+EXPORT uint32_t web_kid_active(void) { return KID_ON(); }
 EXPORT uint32_t web_kid_guess(void) { return kid.g_target; }
 EXPORT uint32_t web_kid_copy_len(void) { return kid.m_len; }                      /* (kid_test.mjs: COPY ME's pattern) */
 EXPORT uint32_t web_kid_copy_key(uint32_t i) { return kid.m_seq[i & 7u]; }
