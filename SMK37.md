@@ -28,11 +28,11 @@ for another model.
 | Pitch wheel | a slide, up to 2 semitones |
 | Mod wheel | more wiggle |
 | FX, SCALE, CHORD, NOTE REPEAT, PARA, GLOBE | HICCUP, BACKWARDS, SLEEPY, SQUEAKY, GIANT, FREEZE |
-| ARP / SEQ / SEQ PLAY / SEQ REC | sparkle / next beat (or song, lesson) / beat on-off / next sky |
-| PATCH (HOME) | a surprise friend |
-| BT (SAVE) | WRITE your own song, and back |
+| ARP | DRUMS. The first three black keys from F3 pick kick, clap and hi-hat. The 16 pads or white keys from F3 to G5 add and remove hits. |
+| SEQ / SEQ PLAY / SEQ REC | next beat (or song or lesson) / start and stop playback / next sky. In WRITE, tap SEQ REC to clear one column, or hold for two seconds to clear the song. |
+| PATCH (HOME) | back to the friend or game |
+| BT (SAVE) | open the song in WRITE |
 | OCTAVE- / OCTAVE+ | bigger / smaller |
-| KNOB BANK | a surprise friend |
 | FADER BANK | the next sky |
 | < / > | the friend before / after |
 

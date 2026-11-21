@@ -543,13 +543,56 @@ static struct {
 
 /* DRUMS (ARP): one bar of 16 steps. A bit in each row's mask means a hit on that step. */
 #define KD_STEPS 16u
+#define KD_BPM_DEFAULT 120
+#define KD_SAVE_MS 4000u
 static const uint8_t KD_LANE[] = {DV_KICK, DV_CLAP, DV_HATC};
 static struct {
     uint16_t hit[NELEM(KD_LANE)];
     int16_t bpm, clock, prior_kit;
-    uint8_t row, rec, fx;
+    uint8_t row, rec, fx, dirty;
     int8_t drawn_step;
-} kd = {.bpm = 120, .drawn_step = -1};
+    uint32_t edit_ms;
+} kd = {.bpm = KD_BPM_DEFAULT, .drawn_step = -1};
+
+/* Eight spare bytes after SLICE's favorites, before Rainbow's KEY byte. */
+#define KD_SETTINGS (&favorites.factory[13][6])
+#define KD_FORMAT 0xD1u
+#if FELUCCA_SLICE
+_Static_assert(NELEM(SLICE_PRESETS) <= 48u, "SLICE favorites must fit before the DRUMS pattern");
+#endif
+
+static void kd_load(void)
+{
+    const uint8_t *data = KD_SETTINGS;
+    uint32_t row;
+    if (data[0] != KD_FORMAT || data[1] < 60u || data[1] > 180u)
+        return;
+    kd.bpm = data[1];
+    for (row = 0; row < NELEM(KD_LANE); row++)
+        kd.hit[row] = (uint16_t)(data[2u + 2u * row] | (uint16_t)data[3u + 2u * row] << 8);
+}
+
+static void kd_save(void)
+{
+    uint8_t *data = KD_SETTINGS;
+    uint32_t row;
+    if (!kd.dirty)
+        return;
+    data[0] = KD_FORMAT;
+    data[1] = (uint8_t)kd.bpm;
+    for (row = 0; row < NELEM(KD_LANE); row++) {
+        data[2u + 2u * row] = (uint8_t)kd.hit[row];
+        data[3u + 2u * row] = (uint8_t)(kd.hit[row] >> 8);
+    }
+    kd.dirty = 0;
+    settings_save();
+}
+
+static void kd_changed(void)
+{
+    kd.dirty = 1;
+    kd.edit_ms = fm1_ms;
+}
 
 /* the picture and name friend fr shows: a look-alike's stand-in (KID_ALT: an original friend with the same sound, sky and
  * beat) while the grown-ups' LOOK-ALIKES is off, else its own */
@@ -933,6 +976,7 @@ static void kid_enter(void)
     led_pos_init();
     song.sel = 0;
     kid.ready = 1;
+    kd_load();
     kid.key = -1;
     kid.beat = KID_SOUND[kid.fr].beat;
     kid_beat_load();
@@ -2057,6 +2101,7 @@ static void kd_enter(void)
 
 static void kd_leave(void)
 {
+    kd_save();
     song.g[G_CLOCK] = kd.clock;
     song.rec = kd.rec;
     trk[3].p[P_E0] = kd.prior_kit;
@@ -2091,6 +2136,7 @@ static void kd_keys(uint32_t notes)
         fm1_irq_off();
         grid_hit(&trk[3], place, KD_LANE[kd.row], (kd.hit[kd.row] >> place) & 1u);
         fm1_irq_on();
+        kd_changed();
         kid.full = 1;
     }
 }
@@ -2360,9 +2406,11 @@ static void kid_input(void)
             kw.cur = (uint8_t)((kw.cur + 1u) % KW_COLS);
         }
     }
-    if (kid.view == KV_DRUMS)
+    if (kid.view == KV_DRUMS) {
         kd_keys(notes);
-    else if (notes) {                             /* a key: its letter, and a hop */
+        if (kd.dirty && !transport_busy() && fm1_ms - kd.edit_ms >= KD_SAVE_MS)
+            kd_save();
+    } else if (notes) {                             /* a key: its letter, and a hop */
         uint32_t loop = kid.fx & (1u << KX_HICCUP | 1u << KX_BACK | 1u << KX_SLEEPY | 1u << KX_FREEZE);
         if (loop) {                               /* HICCUP, BACKWARDS, SLEEPY and FREEZE loop or stop what they */
             for (k = 0; k < KX_COUNT; k++)        /* heard: let go for the new note and press again next frame, or a key */
@@ -2447,8 +2495,9 @@ static void kid_input(void)
             kw.bpm = song.g[G_BPM];
             kw.dirty = 1;
             kw.edit_ms = fm1_ms;
-        } else if (kid.view == KV_DRUMS) {
+        } else if (kid.view == KV_DRUMS && kd.bpm != song.g[G_BPM]) {
             kd.bpm = song.g[G_BPM];
+            kd_changed();
         }
         kid_hint(KH_SPEED);
     }

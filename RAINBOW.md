@@ -28,10 +28,10 @@ at the next power-on.
 | | The top row's effects turn on with a tap and off with another (one at a time; the lit button shows which). HICCUP, BACKWARDS, SLEEPY and FREEZE start again on every new note, so a key pressed after the tap always sounds. |
 | PLAY | Starts and stops the beat: drums and a bass line that is always in key, so anything played fits. The friend dances. |
 | SEQ | The next beat (21): DANCE, MARCH, SPOOKY, ROCK, DISCO, HIP HOP, TRAIN, SAMBA, REGGAE, LULLABY, HOEDOWN, LOFI, ACID, POLKA, BOSSA, FUNK, SKA, TRAP, SALSA, SHUFFLE, BREAK (Felucca's own drum loop, played back as it was made, at 120 BPM). |
-| ARP | Sparkle: a held key plays up and down by itself. In ACCORDION it has three settings, one a press: SPARKLE TUNE (the white keys sparkle while the black keys' chords hold steady), SPARKLE ALL (the chords sparkle too) and off. |
+| ARP | DRUMS. Make a beat with kick, clap and hi-hat on 16 steps. |
 | REC | The next sky (rainbow, stars, hearts, bubbles, flowers, confetti, clouds, snow, autumn leaves, desert, the street, under the sea, rain, fireworks, and the secret northern lights), with confetti. |
-| HOME | A surprise friend, with confetti. Held for 1 second it opens the grown-ups' VOLUME instead (below). |
-| SAVE | WRITE: write your own song (below). SAVE again goes back to playing. |
+| HOME | Back to the friend or game. Hold for 1 second for the grown-up controls. |
+| SAVE | WRITE. Open your song on the staff. |
 | HOME held 1 s, then OCT- / OCT+ | The grown-ups' VOLUME: the most the MASTER knob can give (below). |
 | HOME held 1 s, then ALGORITHM | The grown-ups' NAME: the name the hello greets (below). |
 | HOME held 1 s, then KNOB 4 | The HAT: ten hats (party, crown, top hat, rainbow bucket, wizard, beanie, western, chef, propeller, flowers) any friend can wear, or none; the band names it. Kept over power-off. Each friend's hat sits on whatever counts as its head (found from the picture: the first row wide enough to be a head, so ears, horns and a whale's spout are passed over; a few placed by hand), sized to that head, and may rise above the picture. (On the SMK-37: not yet.) |
@@ -67,8 +67,7 @@ In every setting, keys held together show their letters in their colors and, whe
 SEVEN, DIM, SUS), whatever their order (u/nutty_cartoon). GUESS and FOLLOW keep the keys at their own notes (OCT 0).
 
 A win has a sound too: when GUESS is right, a COPY ME round is played back, a FOLLOW song or a CHORDS lesson is finished, the
-friend plays a little cheer up the C chord (two notes for a small win, four for a whole song, lesson or STAR!). A new friend (a
-surprise from HOME) or a new sky (REC) gets the small one. The drum, bass and noise friends stay quiet, as their notes are no tune.
+friend plays a little cheer up the C chord (two notes for a small win, four for a whole song, lesson or STAR!). A new sky picked with REC gets the small cheer. The drum, bass and noise friends stay quiet, as their notes are no tune.
 
 ## Stars and secrets
 
@@ -127,18 +126,26 @@ friends, the way Mario Paint's composer did, and plays it back.
 | Keys | Write a note in the yellow column (a drum friend's keys write its drums, as they play them): the friend being written with, in a ball of the note's color. It plays as it lands, and the column moves on when the key is let go. Two keys together make a chord (two notes in a column). The same key again takes its note out. |
 | PRESETS | The friend to write with (shown in the band). A song has a band of up to three friends; a fourth takes the place of the one used least (its notes become the new friend's). |
 | OCT- / OCT+ | The yellow column back and forward (32 columns, 4 pages of 8: the dots). |
-| HOME | Wipes the column (held 1 s it is the grown-ups' VOLUME, as always). While the song plays, it wipes the column that is playing. |
+| REC tap | Wipes the selected column, or the column that is playing. |
 | PLAY | Plays the song from the start, in a loop: the column turns green and the friend of each note hops along over it. PLAY again stops. On a song with nothing written yet, the loop is two bars, to play into (below). |
-| Keys, while it plays | Loop and layer: a key is written where the beat is (into the nearest column), and is heard the next time round. The band says LOOP. PRESETS picks another friend for the next layer (up to three friends, two notes a column). A note is only added while it plays; HOME wipes the column being played. |
+| Keys, while it plays | Loop and layer: a key is written where the beat is (into the nearest column), and is heard the next time round. The band says LOOP. PRESETS picks another friend for the next layer (up to three friends, two notes a column). A note is only added while it plays; Tap REC to wipe the column being played. |
 | SEQ | A beat under it: none, then each of the 21 (drums only). |
 | SELECT | Slower or faster. |
 | REC held 2 s | A new, empty song. |
-| SAVE | Back to playing. |
+| HOME / ARP | Back to the friend or game, or straight to DRUMS. |
 
 The song is kept when the FM-1 is switched off: in 58 bytes of the settings that no engine uses (`favorites.factory[14]` and
 `[15][0..25]`), so it never touches your projects or the autosave. It is written about 4 seconds after the last change (while
 stopped) and when WRITE is left. A column is a beat (a quarter note); each friend plays on its own track (tracks 1 to 3, the
 drums on 4), through Felucca's own sequencer.
+
+## DRUMS: make a beat
+
+Press **ARP**. The first three black keys pick and play the kick, clap and hi-hat. The 16 white keys light up where the selected drum will hit. Tap a white key to add a hit, and tap it again to take it out. All three drums can hit on the same step.
+
+Press **PLAY** and watch the marker walk across the four groups of steps. You can add or remove hits while it goes. Turn **SELECT** to change the speed.
+
+**HOME**, **SAVE** and **ARP** each take you straight to a mode. The lit button shows where you are. Changing modes stops playback and saves edits. The drum pattern and WRITE song each stay on the FM-1 after power-off.
 
 ## Volume, for grown-ups
 
@@ -146,8 +153,7 @@ Two guards, both in `kid.c` (`kid_master`):
 
 - **Your maximum.** Hold **HOME for 1 second**: the band says VOLUME and shows eight dots. While HOME is still down, **OCT-** steps it
   down and **OCT+** up. Step 6 is the old "about half" and is where it starts; step 8 lets the MASTER knob go
-  all the way, step 1 is very quiet. It is kept when the FM-1 is switched off. Let go of HOME and nothing else happens (no surprise
-  friend). A shorter HOME press, and OCT- / OCT+ without HOME, do what they always did.
+  all the way, step 1 is very quiet. It is kept when the FM-1 is switched off. Let go of HOME to close the controls. A short tap goes back to normal play.
 - **A limiter that follows it.** The FM-1 already had a peak limiter; in Rainbow mode its ceiling now moves with the volume (15 times the
   MASTER level it is at, never above the old fixed ceiling, and it catches every peak at once), a little above what a plain chord over a beat peaks at. So an effect that makes the sound louder
   (GIANT, FREEZE, echo, a chord on a beat) is held to the level already heard. Outside Rainbow mode the limiter is as it was.

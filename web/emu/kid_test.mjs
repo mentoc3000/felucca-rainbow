@@ -771,6 +771,57 @@ async function checkDrumRestore() {
 }
 await checkDrumRestore();
 
+async function checkDrumPowerCycle() {
+  const baselinePath = process.env.RAINBOW_BASELINE_WASM;
+  const writeNotes = ({ e }) => Array.from({ length: 3 }, (_, i) => e.web_kid_wnote(i, 0));
+  const drumSteps = ({ e }) => Array.from({ length: 16 }, (_, i) => e.web_step(3, i) >> 8);
+  if (baselinePath) {
+    const old = await newDevice(undefined, fs.readFileSync(baselinePath));
+    old.tap(B.SAVE);
+    for (const key of [7, 11, 14]) old.key(key);
+    for (let i = 0; i < 18; i++) old.tap(B.SEQ);
+    old.run(4200);
+    const upgraded = await newDevice(old.image());
+    upgraded.tap(B.SAVE);
+    check("existing firmware's WRITE notes and backing beat open after upgrade",
+          writeNotes(upgraded).every((v, i) => v && v === writeNotes(old)[i]) &&
+          upgraded.e.web_kid_wbeat() === 18);
+    upgraded.tap(B.ARP);
+    check("older settings start DRUMS empty at 120 BPM", drumSteps(upgraded).every(x => !x) && upgraded.e.web_kid_drum_bpm() === 120);
+  }
+
+  const writer = await newDevice();
+  writer.tap(B.ARP);
+  writer.tap(B.PLAY);
+  writer.key(0);
+  writer.key(3); writer.key(7);
+  writer.key(5); writer.key(26);
+  writer.e.web_enc(EN.SELECT, 1); writer.run(100);
+  const hits = drumSteps(writer);
+  writer.tap(B.SAVE);
+  for (const key of [7, 11, 14]) writer.key(key);
+  const notes = writeNotes(writer);
+  writer.tap(B.HOME);
+  const rebooted = await newDevice(writer.image());
+  rebooted.tap(B.SAVE);
+  check("WRITE and DRUMS save independently", writeNotes(rebooted).every((v, i) => v && v === notes[i]) && !rebooted.e.web_playing());
+  rebooted.tap(B.ARP);
+  check("live DRUMS edits and speed survive a power cycle", hits.some(Boolean) &&
+        drumSteps(rebooted).every((v, i) => v === hits[i]) && rebooted.e.web_kid_drum_bpm() === 125 && !rebooted.e.web_playing());
+
+  rebooted.key(1); rebooted.key(26); rebooted.run(4200);
+  const idle = await newDevice(rebooted.image());
+  idle.tap(B.ARP);
+  check("DRUMS saves changes while stopped without leaving", (drumSteps(idle)[15] & 1) === 1);
+  idle.key(5); idle.key(0); idle.tap(B.PLAY);
+  idle.buttons((1 << B.HOME) | (1 << B.SAVE), 3300);
+  idle.buttons(0, 600);
+  const afterExit = await newDevice(idle.image());
+  afterExit.tap(B.ARP);
+  check("HOME + SAVE saves a playing drum loop before leaving", (drumSteps(afterExit)[0] & 8) === 8);
+}
+await checkDrumPowerCycle();
+
 // WRITE (SAVE): the child's own song. A key writes a note (a friend in a ball of the note's color) and the column moves on, the
 // same key again takes it out, REC wipes the column, PLAY plays it back, and it is kept over a power-off. REC held 2 s
 // starts a new song. HOME goes back to playing.
