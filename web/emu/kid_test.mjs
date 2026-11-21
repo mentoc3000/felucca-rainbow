@@ -814,7 +814,8 @@ async function checkDrumKits() {
   const kitName = () => String.fromCharCode(...Array.from({ length: 7 }, (_, i) => e.web_kid_txt(i)).filter(Boolean));
 
   tap(B.ARP);
-  check("DRUMS starts on kit 80 and lights SEQ", e.web_rainbow_kit() === 4 && ((e.web_lit_buttons() >> B.SEQ) & 1));
+  const seqDark = () => !((e.web_lit_buttons() | e.web_dim_buttons()) & (1 << B.SEQ));
+  check("DRUMS starts on kit 80 with SEQ dark", e.web_rainbow_kit() === 4 && seqDark());
   key(0);
   e.web_enc(EN.SELECT, 1); run(100);
   tap(B.PLAY);
@@ -825,6 +826,7 @@ async function checkDrumKits() {
           e.web_rainbow_kit() === id && kitName() === `KIT ${name}` &&
           e.web_kid_drum_bpm() === 125 && (e.web_step(3, 0) >> 8) === 1 && e.web_playing());
   }
+  check("SEQ stays dark after changing the kit", seqDark());
 
   tap(B.SEQ);
   tap(B.HOME);
@@ -856,24 +858,45 @@ async function checkDrumKnobs() {
   const turn = (knob, count) => { e.web_enc(knob, count); run(70); };
   const pixel = (x, y) => new Uint16Array(e.memory.buffer, e.web_screen(), 240 * 240)[y * 240 + x];
 
+  const dots = [[236, 52, 64], [255, 140, 30], [255, 216, 46]]
+    .map(([r, g, b]) => ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+  const meterShows = (filled) => dots.every((color, i) => {
+    const stored = pixel(100 + 24 * i, 230);
+    return (((stored & 255) << 8) | (stored >> 8)) === (i < filled ? color : WHITE);
+  });
+  const label = () => Array.from({ length: 12 }, (_, i) => e.web_kid_txt(i)).join(",");
+
   const backingMix = mix(e);
   const backingSwing = e.web_rainbow_drum_swing();
   tap(B.ARP);
   check("DRUMS defaults to full levels and straight timing", mix(e).every(v => v === 127) && e.web_rainbow_drum_swing() === 0);
+  const drumsLabel = label();
   key(0);
   tap(B.PLAY);
   const fullDot = pixel(32, 79);
   turn(EN.K1, -1);
   check("knob 1 lowers just the kick and updates its dots", mix(e).join() === "102,127,127" && pixel(32, 79) !== fullDot);
-  turn(EN.K2, -2);
+  shot("drum_kick_level", e);
+  check("turning knob 1 shows two colored dots in the band", meterShows(2) && label() !== drumsLabel);
+  const kickLabel = label();
+  turn(EN.K2, -1);
+  check("turning knob 2 names the clap even at the same level", meterShows(2) && label() !== kickLabel);
+  turn(EN.K2, -1);
+  check("lowering the clap shows one colored dot", meterShows(1));
   turn(EN.K3, -3);
+  check("muting the hi-hat shows three empty dots", meterShows(0));
+  run(1600);
+  check("DRUMS title returns after the knob hint", label() === drumsLabel);
+  turn(EN.K3, -1);
+  check("turning past the level limit still shows the meter", meterShows(0));
   check("knobs 2 and 3 adjust clap and hi-hat independently", mix(e).join() === "102,74,0");
   turn(EN.K4, 1);
-  check("knob 4 adds swing to the playing drum track", e.web_rainbow_drum_swing() === 30 && e.web_playing());
+  shot("drum_swing", e);
+  check("knob 4 adds swing to the playing drum track", e.web_rainbow_drum_swing() === 30 && e.web_playing() && meterShows(2));
   turn(EN.K4, 7);
-  check("knob 4 clamps at the third swing setting", e.web_rainbow_drum_swing() === 60);
+  check("knob 4 clamps at the third swing setting", e.web_rainbow_drum_swing() === 60 && meterShows(3));
   turn(EN.K4, -7);
-  check("turning knob 4 left restores straight timing", e.web_rainbow_drum_swing() === 0);
+  check("turning knob 4 left restores straight timing", e.web_rainbow_drum_swing() === 0 && meterShows(1));
   turn(EN.K4, 2);
   check("the mix keeps the same tempo and hits", e.web_kid_drum_bpm() === 120 && (e.web_step(3, 0) >> 8) === 1);
   tap(B.HOME);

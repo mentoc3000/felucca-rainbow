@@ -145,7 +145,7 @@ Press **ARP**. The first three black keys pick and play the kick, clap and hi-ha
 
 Press **PLAY** and watch the marker walk across the four groups of steps. You can add or remove hits while it goes. Turn **SELECT** to change the speed. Press **SEQ** to change the kit. It starts on 80, then goes through 10, 66, 55, 77 and STD. The kit is saved with the pattern. Hold **REC** for two seconds to clear all three rows.
 
-**KNOB 1**, **KNOB 2** and **KNOB 3** set the kick, clap and hi-hat levels. The dots under each drum show its level. **KNOB 4** sets the swing. Turn it left for STRAIGHT, or right for SWING and BOUNCY. The levels and swing are saved with the beat.
+**KNOB 1**, **KNOB 2** and **KNOB 3** set the kick, clap and hi-hat levels. The dots under each drum show its level. **KNOB 4** sets the swing. Turn it left for STRAIGHT, or right for SWING and BOUNCY. When you turn a knob, its name and three large dots show the setting for a moment. The levels and swing are saved with the beat.
 
 **HOME**, **SAVE** and **ARP** each take you straight to a mode. The lit button shows where you are. Changing modes stops playback and saves edits. The drum pattern and WRITE song each stay on the FM-1 after power-off.
 

@@ -430,7 +430,7 @@ static const int8_t KID_SIN[32] = {0, 25, 49, 71, 90, 106, 117, 125, 127, 125, 1
                                    0, -25, -49, -71, -90, -106, -117, -125, -127, -125, -117, -106, -90, -71, -49, -25};
 
 enum { KH_NONE, KH_SIZE, KH_NIGHT, KH_ECHO, KH_WIGGLE, KH_SPEED, KH_CHORD, KH_BEAT, KH_VOLUME, KH_NEWSONG, KH_SONG,
-       KH_LOOK, KH_HAT, KH_STARS, KH_NEWHAT, KH_NEWFRIEND, KH_NEWSKY, KH_NOTES, KH_STAFF, KH_KEY, KH_DRUM_SWING };
+       KH_LOOK, KH_HAT, KH_STARS, KH_NEWHAT, KH_NEWFRIEND, KH_NEWSKY, KH_NOTES, KH_STAFF, KH_KEY, KH_DRUM_SWING, KH_DRUM_LEVEL };
 enum { KB_NAME, KB_NOTE, KB_HINT, KB_CHORD };
 /* ALGORITHM: how the keys play (kid_mode_set). CHOIR: three friends sing a chord; STRUM: an Omnichord (seq.c
  * kb_strum_map); GUESS: an ear game; FOLLOW: songs to learn, the next key lit */
@@ -566,7 +566,7 @@ static struct {
     int16_t bpm, clock, prior_kit, prior_swing;
     int16_t prior_gain[NELEM(KD_LANE)];
     uint8_t level[NELEM(KD_LANE)];
-    uint8_t row, kit, swing, rec, fx, dirty;
+    uint8_t row, kit, swing, level_hint_row, rec, fx, dirty;
     int8_t drawn_step;
     uint32_t edit_ms;
 } kd = {.bpm = KD_BPM_DEFAULT, .level = {KD_LEVEL_MAX, KD_LEVEL_MAX, KD_LEVEL_MAX}, .drawn_step = -1};
@@ -2207,6 +2207,8 @@ static void kd_knob(uint32_t knob, int32_t turn)
 {
     if (knob < NELEM(KD_LANE)) {
         uint8_t level = (uint8_t)clamp(kd.level[knob] + turn, 0, KD_LEVEL_MAX);
+        kd.level_hint_row = (uint8_t)knob;
+        kid_hint(KH_DRUM_LEVEL);
         if (level == kd.level[knob])
             return;
         kd.level[knob] = level;
@@ -2702,8 +2704,7 @@ static void kid_leds(void)
     for (k = 0; k < KX_COUNT; k++)
         led_put(nl, panel.btn[KID_FX_BTN[k]], (kid.fx >> k) & 1u);
     led_put(nl, panel.btn[B_ARP], kid.view == KV_DRUMS);
-    led_put(nl, panel.btn[B_SEQ], kid.view == KV_DRUMS ||
-            (kid.view == KV_PLAY && (kid.mode == KM_FOLLOW || kid.mode == KM_CHORDS)));  /* picks kit, song or lesson */
+    led_put(nl, panel.btn[B_SEQ], kid.view == KV_PLAY && (kid.mode == KM_FOLLOW || kid.mode == KM_CHORDS));
     led_put(nl, panel.btn[B_HOME], kid.view == KV_PLAY);
     led_put(nl, panel.btn[B_SAVE], KW_ON);        /* (WRITE: SAVE lit) */
     lit = kid_lit_mask(fm1_ms);
@@ -2715,6 +2716,8 @@ static void kid_leds(void)
     }
     for (k = 0; k < NB; k++)
         led_put(nd, panel.btn[k], 1);
+    if (kid.view == KV_DRUMS)
+        led_clear(nd, panel.btn[B_SEQ]);
     if (song.playing) {
         led_clear(nd, panel.btn[B_PLAY]);
         nl[LED_PLAY_GREEN >> 3] |= (uint8_t)(1u << (LED_PLAY_GREEN & 7u));
@@ -2783,6 +2786,7 @@ static struct {
     int16_t ol;                         /* its outline (px) */
     uint16_t ink, bg, bg2;
     int8_t meter;                       /* dots lit (HINT), -1 none */
+    uint8_t meter_dots;                 /* total dots across the band */
     uint8_t staff;                      /* the staff shows */
     uint8_t card, card_n;               /* .. as ALGORITHM's card instead (KID_HELP): it shows, its lines */
     int16_t card_y;                     /* .. its first line's top */
@@ -2902,11 +2906,12 @@ static void kid_frame_setup(uint32_t now)
 }
 
 /* the band's content for this frame; returns its signature (a change redraws it) */
+static const char *const KID_DRUM_NAME[DVT_COUNT] = {"KICK", "KICK", "SNARE", "CLAP", "HI-HAT", "OPEN HAT",
+                                                    "TOM", "CONGA", "RIM", "CLAVE", "COWBELL", "CYMBAL"};
+
 /* a drum friend's key: the drum it strikes, as a word, and the drum's colour (Felucca's kit or a model kit's piece) */
 static const char *kid_drum_word(uint32_t key, uint16_t *col)
 {
-    static const char *const STD[DVT_COUNT] = {"KICK", "KICK", "SNARE", "CLAP", "HI-HAT", "OPEN HAT", "TOM", "CONGA",
-                                                "RIM", "CLAVE", "COWBELL", "CYMBAL"};
     static const uint8_t LANE_OF[DVT_COUNT] = {0, 0, 1, 2, 3, 4, 5, 5, 6, 6, 7, 7};
     track_t *t = &trk[0];
     int32_t st;
@@ -2914,13 +2919,13 @@ static const char *kid_drum_word(uint32_t key, uint16_t *col)
     const char *w;
     if (ty >= 16u) {                                              /* a model kit: its piece in the lane */
         lane = ty & 7u;
-        static const uint8_t STD_OF[8] = {0, 2, 3, 4, 5, 6, 8, 10};   /* a lane as the band says it (STD: a translated
+        static const uint8_t STD_OF[8] = {0, 2, 3, 4, 5, 6, 8, 10};   /* a lane as the band says it (KID_DRUM_NAME: a translated
                                                   * build's words too, so no lane name is compared with a word) */
         w = drum_lane_name(t, lane);                              /* (the kit's swaps: CONGA, CLAVE, CYM) */
-        w = STD[str_eq(w, "CONGA") ? 7u : str_eq(w, "CLAVE") ? 9u : str_eq(w, "CYM") ? 11u : STD_OF[lane]];
+        w = KID_DRUM_NAME[str_eq(w, "CONGA") ? 7u : str_eq(w, "CLAVE") ? 9u : str_eq(w, "CYM") ? 11u : STD_OF[lane]];
     } else {
         lane = LANE_OF[ty % DVT_COUNT];
-        w = STD[ty % DVT_COUNT];
+        w = KID_DRUM_NAME[ty % DVT_COUNT];
     }
     *col = KID_RAINBOW[lane % 7u];
     return w;
@@ -2942,6 +2947,15 @@ static uint32_t kid_band_word(const char *s, int16_t sc, uint16_t bg, uint32_t s
     kf.ink = KID_WHITE;
     kf.bg = bg;
     kf.bg2 = kid_mix(bg, RGB(0, 0, 0), 60u);
+    return sig;
+}
+
+static uint32_t kid_band_three_dots(const char *label, int8_t filled, uint32_t sig)
+{
+    kid_band_word(label, 3, RGB(150, 110, 230), sig);
+    kf.bt.y -= 8;                                        /* leave room for the dots below the word */
+    kf.meter = filled;
+    kf.meter_dots = 3;
     return sig;
 }
 
@@ -3118,6 +3132,7 @@ static uint32_t kid_band_setup(uint32_t now)
                kid.hint == KH_NEWFRIEND || kid.hint == KH_NEWSKY) && now - kid.hint_ms < 1500u;     /* (the grown-ups' VOLUME comes before all) */
     int hint = kid.hint != KH_NONE && now - kid.hint_ms < 1500u;
     kf.meter = -1;
+    kf.meter_dots = 8;
     kf.ol = 2;
     if (kid.view == KV_DRUMS && !vol && !(hint && kid.hint == KH_SPEED)) {
         if (hint && kid.hint == KH_BEAT) {
@@ -3126,7 +3141,12 @@ static uint32_t kid_band_setup(uint32_t now)
             return kid_band_word(kit_name, 5, RGB(80, 108, 190), 0xD010u + kd.kit);
         }
         if (hint && kid.hint == KH_DRUM_SWING)
-            return kid_band_word(KD_SWING[kd.swing].name, 5, RGB(80, 108, 190), 0xD020u + kd.swing);
+            return kid_band_three_dots(KD_SWING[kd.swing].name, (int8_t)(kd.swing + 1u), 0xD020u + kd.swing);
+        if (hint && kid.hint == KH_DRUM_LEVEL) {
+            uint32_t row = kd.level_hint_row, note = DRUM_LANE_NOTE[KD_LANE[row]];
+            uint32_t drum = DRUM_GM[note - 35u][0];
+            return kid_band_three_dots(KID_DRUM_NAME[drum], (int8_t)kd.level[row], 0xD030u + row * 4u + kd.level[row]);
+        }
         return kid_band_word("DRUMS", 5, RGB(80, 108, 190), 0xD001u);
     }
     if (KW_ON && !(hint && (kid.hint == KH_SPEED || kid.hint == KH_NIGHT || kid.hint == KH_VOLUME || kid.hint == KH_LOOK || kid.hint == KH_HAT || kid.hint == KH_KEY))) {
@@ -3177,7 +3197,7 @@ static uint32_t kid_band_setup(uint32_t now)
         sig = 0x400u | kid.fxk;
     } else if (kid.hint != KH_NONE && now - kid.hint_ms < 1500u) {
         static const char *const WORD[] = {"", "", "DAY", "ECHO", "WIGGLE", "", "", "", "VOLUME", "", "", "", "", "STARS",
-                                           "NEW HAT!", "NEW FRIEND!", "NEW SKY!", "", "", "", ""};
+                                           "NEW HAT!", "NEW FRIEND!", "NEW SKY!", "", "", "", "", ""};
         static char key_word[16];
         int32_t v = 0;
         kf.band = KB_HINT;
@@ -3375,10 +3395,12 @@ static uint16_t kid_band_px(int32_t x, int32_t y)
         return kf.ccol[((x - kf.bt.x) / (KID_ADV * kf.bt.sc)) % 16];
     if (k)
         return k == 1 ? kf.ink : KID_INK;
-    if (kf.meter >= 0 && y >= (int32_t)KID_BAND_Y + 38) {         /* the meter: 8 dots */
-        int32_t i = (x - 28) / 24, dx = (x - 28) % 24 - 12, dy = y - ((int32_t)KID_BAND_Y + 46), d = dx * dx + dy * dy;
-        if (x >= 28 && i < 8 && d <= 49)
-            return d >= 30 ? KID_INK : i < kf.meter ? KID_RAINBOW[i % 7] : KID_WHITE;
+    if (kf.meter >= 0 && y >= (int32_t)KID_BAND_Y + 38) {
+        int32_t left = 28 + (8 - kf.meter_dots) * 12;
+        int32_t i = (x - left) / 24, dx = (x - left) % 24 - 12, dy = y - ((int32_t)KID_BAND_Y + 46);
+        int32_t distance = dx * dx + dy * dy;
+        if (x >= left && i < kf.meter_dots && distance <= 49)
+            return distance >= 30 ? KID_INK : i < kf.meter ? KID_RAINBOW[i % 7] : KID_WHITE;
     }
     if (y < (int32_t)KID_BAND_Y + 3)
         return KID_INK;

@@ -124,7 +124,6 @@ static void kid_smk_leds(void)
     for (k = 0; k < KX_COUNT; k++)
         led_put(nl, panel.btn[KID_FX_BTN[k]], (kid.fx >> k) & 1u);
     led_put(nl, panel.btn[B_ARP], kid.view == KV_DRUMS);
-    led_put(nl, panel.btn[B_SEQ], kid.view == KV_DRUMS);
     led_put(nl, panel.btn[B_HOME], kid.view == KV_PLAY);
     led_put(nl, panel.btn[B_SAVE], KW_ON);        /* (WRITE: SAVE lit) */
     led_put(nl, panel.btn[B_PLAY], song.playing);
