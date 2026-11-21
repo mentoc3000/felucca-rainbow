@@ -47,7 +47,6 @@ knobs:
 buttons:
   map: printed                  # FX SCALE CHORD NOTE-REPEAT PARA GLOBE = HICCUP BACKWARDS SLEEPY SQUEAKY GIANT FREEZE
   extra:
-    KNOB BANK: surprise friend
     FADER BANK: next sky
     "<": previous friend
     ">": next friend

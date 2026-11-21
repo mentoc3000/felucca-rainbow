@@ -995,6 +995,25 @@ static void kid_restore_play(void);
 static int32_t kw_at(void);
 static void kid_mode_set(uint32_t m);
 
+/* End notes on their old tracks. Leave kb_prev alone so a key still down
+ * has to be released and pressed again to sound in the new mode. */
+static void kid_release_keys(void)
+{
+    uint32_t k;
+    fm1_irq_off();
+    for (k = 0; k < 27u; k++)
+        if ((kb_prev & (1u << k)) && kb_note[k] != KB_SILENT) {
+            key_off(k, &trk[kb_trk[k] % NTRK]);
+            kb_note[k] = KB_SILENT;
+        }
+#if BOARD_SMK37
+    for (k = 0; k < FM1_NKEY; k++)
+        ext_key_off(k);
+#endif
+    panic_req |= (1u << NTRK) - 1u;
+    fm1_irq_on();
+}
+
 static void kid_leave(void)
 {
     fx_warm = 0;
@@ -1008,6 +1027,7 @@ static void kid_leave(void)
         transport_req = 0;
         fm1_irq_on();
     }
+    kid_release_keys();
     if (kid.view != KV_PLAY) {
         if (KW_ON)
             kw_leave();
@@ -1027,6 +1047,7 @@ static void kid_leave(void)
     autosave_boot(1);
     lcd_fill(0, 0, 240, 240, T_BG);
     ui.home = 1;
+    ui.home_t0 = ui.save_t0 = 3u;               /* consume the exit chord in the full synth too */
     ui.force = 1;
 }
 
@@ -1481,6 +1502,8 @@ static void kw_leave(void)
     kw.clear_on = kw.adv = kw.floor = 0;
     for (s = 0; s < 3u; s++) {
         track_defaults_steps(&trk[s]);
+        trk[s].p[P_SDIV] = 2;
+        trk[s].p[P_SLEN] = 16;
         trk[s].p[P_MUTE] = 0;
     }
 }
@@ -2159,6 +2182,7 @@ static int kid_switch_pending(void)
         transport_req = 2;
         return 1;
     }
+    kid_release_keys();
     if (kid.view == KV_PLAY) {
         kid.play_fr = kid.fr;
         kid.play_beat = kid.beat;
@@ -2178,7 +2202,6 @@ static int kid_switch_pending(void)
     } else {
         kd_leave();
     }
-    panic_req = (1u << NTRK) - 1u;
     kid.view = kid.next_view;
     if (KW_ON)
         kw_enter();
@@ -2363,7 +2386,7 @@ static void kid_input(void)
     if (kid.vol_hold && (held & home) && !(held & both & ~home) && !kid.vol_open &&
         (fm1_ms | 1u) - kid.vol_ms >= KID_VOL_HOLD_MS) {   /* HOME held 1 s: the grown-ups' VOLUME opens */
         kid.vol_open = 1;
-        kid.home_down = 0;                        /* (no surprise friend when it is let go) */
+        kid.home_down = 0;                        /* the hold consumes HOME's tap */
         kid_hint(KH_VOLUME);
     }
     if (kid.vol_open && (held & home))
@@ -2384,16 +2407,16 @@ static void kid_input(void)
     if (kid_switch_pending())
         return;
     if (KW_ON) {
-        if (kw.clear_on && !((held >> panel.btn[B_REC]) & 1u)) {
-            uint32_t c = (uint32_t)kw_at() % KW_COLS;
-            kw.clear_on = 0;
-            kw.note[c][0] = kw.note[c][1] = 0;
-            kw_changed();
-        } else if (kw.clear_on && (fm1_ms | 1u) - kw.clear_ms > 2000u) {
+        if (kw.clear_on && (fm1_ms | 1u) - kw.clear_ms >= 2000u) {
             kw.clear_on = 0;
             kw_clear();
             kid_hint(KH_NEWSONG);
             kid.party_ms = fm1_ms | 1u;
+        } else if (kw.clear_on && !((held >> panel.btn[B_REC]) & 1u)) {
+            uint32_t c = (uint32_t)kw_at() % KW_COLS;
+            kw.clear_on = 0;
+            kw.note[c][0] = kw.note[c][1] = 0;
+            kw_changed();
         }
         if (kw.dirty && !song.playing && fm1_ms - kw.edit_ms > KW_SAVE_MS)
             kw_save();
@@ -3179,7 +3202,7 @@ static uint32_t kid_band_icon(uint32_t sig)
     int32_t m = -1, pic = -1, w1, w2 = 0;
     kf.icon = -1;
     kf.pic = -1;
-    if (KW_ON || kid.hello_ms)
+    if (kid.view != KV_PLAY || kid.hello_ms)
         return sig;
     if (kf.band == KB_HINT && kid.hint == KH_SONG && kid.mode == KM_FOLLOW) {   /* FOLLOW's song, SEQ pressed: its picture */
         pic = (int32_t)kid_song_pic(kid.f_song);

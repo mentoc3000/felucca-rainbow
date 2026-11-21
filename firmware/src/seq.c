@@ -688,6 +688,17 @@ static __attribute__((noinline)) void kb_lat(uint32_t k)
 static uint8_t ext_note[FM1_NKEY], ext_trk[FM1_NKEY];   /* note + 1 sounding, 0 = none */
 static volatile int16_t smk_bend14;             /* the pitch wheel, -8192..8191 (main.c smk_wheels) */
 static volatile uint8_t smk_modw;               /* the mod wheel, 0..127 */
+static void ext_key_off(uint32_t k)
+{
+    uint32_t n, t;
+    if (!ext_note[k])
+        return;
+    n = ext_note[k] - 1u;
+    t = ext_trk[k] % NTRK;
+    input_off(&trk[t], n);
+    midi_out_event(0x08u | (0x80u | trk_midi_ch(t)) << 8 | n << 16);
+    ext_note[k] = 0;
+}
 static void ext_keys_block(void)
 {
     int32_t e;
@@ -698,13 +709,7 @@ static void ext_keys_block(void)
         if (k >= FM1_NKEY)
             continue;
         if (!v) {
-            if (ext_note[k]) {
-                n = ext_note[k] - 1u;
-                mc = trk_midi_ch(ext_trk[k] % NTRK);
-                input_off(&trk[ext_trk[k] % NTRK], n);
-                midi_out_event(0x08u | (0x80u | mc) << 8 | n << 16);
-                ext_note[k] = 0;
-            }
+            ext_key_off(k);
             continue;
         }
         if (ext_note[k] || kb_boot_hold || kb_asleep || song.grid || (fm1_in.buttons & kb_mask) || kb_lock)

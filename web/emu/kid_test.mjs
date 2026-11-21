@@ -635,6 +635,10 @@ async function checkWriteNavigation() {
   check("SAVE in WRITE leaves the song playing", e.web_kid_view() === 1 && e.web_playing() === 1);
   tap(B.HOME);
   check("HOME leaves WRITE and stops the song", e.web_kid_view() === 0 && e.web_playing() === 0);
+  tap(B.PLAY);
+  check("the backing bass and drums step together after WRITE",
+        e.web_rainbow_step_index(3) > 0 && e.web_rainbow_step_index(1) === e.web_rainbow_step_index(3));
+  tap(B.PLAY);
   tap(B.SAVE);
   check("WRITE reopens with its note", e.web_kid_view() === 1 && note !== 0 && e.web_kid_wnote(0, 0) === note);
   const limit = e.web_master_q12();
@@ -653,9 +657,30 @@ for (const [fromWrite, first] of [[false, B.SAVE], [true, B.HOME]]) {
   buttons((1 << B.HOME) | (1 << B.SAVE), 1200);
   check("exit chord does not change Rainbow view before the hold",
         e.web_kid_active() && e.web_kid_view() === Number(fromWrite));
-  buttons((1 << B.HOME) | (1 << B.SAVE), 2100);
+  buttons((1 << B.HOME) | (1 << B.SAVE), fromWrite ? 3100 : 2100);
+  check("holding the exit chord extra time leaves the synth on HOME", !e.web_kid_active() && e.web_synth_home());
+  buttons(1 << B.SAVE, 100);
   buttons(0, 400);
-  check("exit chord reaches full synth and release keeps it there", !e.web_kid_active() && !e.web_playing());
+  check("releasing HOME then SAVE leaves the synth on HOME", !e.web_kid_active() && e.web_synth_home() && !e.web_playing());
+}
+
+{
+  const { e, run, buttons, tap, key } = await newDevice();
+  tap(B.SAVE); key(7); tap(B.HOME);
+  e.web_keys(1 << 7); run(100);
+  tap(B.SAVE);
+  buttons(1 << B.PLAY, 45);
+  check("WRITE sounds the first note while the old C key is held", e.web_gate_note(0) === 60);
+  e.web_keys(0); buttons(0, 40);
+  check("releasing the old C key leaves the new WRITE note sounding", e.web_gate_note(0) === 60);
+}
+
+{
+  const { e, buttons, tap, key } = await newDevice();
+  tap(B.SAVE); key(7); key(11); tap(B.OCTDN);
+  buttons(1 << B.REC, 2020);
+  buttons(0, 150);
+  check("REC held just over two seconds erases the whole song", !e.web_kid_wnote(0, 0) && !e.web_kid_wnote(1, 0));
 }
 
 async function checkDrumNavigation() {
@@ -752,6 +777,8 @@ await checkDrumGrid();
 
 async function checkDrumRestore() {
   const { e, run, tap } = await newDevice();
+  const drumBand = () => new Uint16Array(e.memory.buffer, e.web_screen(), 240 * 240).slice(184 * 240).join(",");
+  let defaultBand;
   for (const beat of ["DANCE", "BREAK", "CHORDS"]) {
     if (beat === "CHORDS") {
       for (let i = 0; i < 6; i++) { e.web_enc(EN.ALGO, 1); run(60); }
@@ -763,11 +790,15 @@ async function checkDrumRestore() {
     const before = [e.web_kid_beat(), e.web_kid_friend(), e.web_rainbow_bpm(), e.web_kid_lesson(), e.web_rainbow_kit()];
     tap(B.ARP);
     if (e.web_kid_view() !== 2) return;
+    if (beat === "DANCE") defaultBand = drumBand();
     tap(B.PLAY);
     tap(B.HOME);
     const after = [e.web_kid_beat(), e.web_kid_friend(), e.web_rainbow_bpm(), e.web_kid_lesson(), e.web_rainbow_kit()];
     check(`DRUMS restores ${beat}, including its sound and tempo`, before.every((v, i) => v === after[i]));
   }
+  e.web_enc(EN.ALGO, -1); run(60); // CHORDS → FOLLOW
+  tap(B.ARP);
+  check("DRUMS title looks the same when opened from FOLLOW", drumBand() === defaultBand);
 }
 await checkDrumRestore();
 
