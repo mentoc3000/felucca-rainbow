@@ -25,7 +25,7 @@
  *   ARP         DRUMS: make a 16-step pattern with kick, clap and hi-hat; SEQ picks the kit
  *   REC         the next sky (rainbow, stars, hearts, bubbles, flowers, confetti, clouds, snow, leaves, desert), with
  *               confetti
- *   HOME        normal Rainbow play
+ *   HOME        normal Rainbow play, or a surprise friend if already there
  *   SAVE        WRITE: the child writes a song on a big staff, each note a friend (kw_*, below)
  *   THE STAFF   a treble clef drops in at the top when the child plays, and writes the notes as coloured noteheads, up to 8,
  *               chords stacked, sharps with a #, ledger lines, 8VA / 8VB over the staff for the octave (OCT); each
@@ -2497,7 +2497,17 @@ static void kid_input(void)
     }
     if (kid.home_down && !(held & home)) {
         kid.home_down = 0;
-        kid_switch(KV_PLAY);
+        if (kid.view == KV_PLAY && kid.next_view == KV_PLAY) {
+            uint32_t friend;
+            do
+                friend = (kid.fr + 1u + rng() % (KID_N - 1u)) % KID_N;
+            while (KID_FRIEND_LOCKED(friend));
+            kid_friend(friend);
+            kid.party_ms = fm1_ms | 1u;
+            kid_cheer(0);
+        } else {
+            kid_switch(KV_PLAY);
+        }
     }
     if (kid.save_down && !(held & save)) {
         kid.save_down = 0;

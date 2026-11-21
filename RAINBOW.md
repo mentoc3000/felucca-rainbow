@@ -30,7 +30,7 @@ at the next power-on.
 | SEQ | The next beat (21): DANCE, MARCH, SPOOKY, ROCK, DISCO, HIP HOP, TRAIN, SAMBA, REGGAE, LULLABY, HOEDOWN, LOFI, ACID, POLKA, BOSSA, FUNK, SKA, TRAP, SALSA, SHUFFLE, BREAK (Felucca's own drum loop, played back as it was made, at 120 BPM). |
 | ARP | DRUMS. Make a beat with kick, clap and hi-hat on 16 steps. |
 | REC | The next sky (rainbow, stars, hearts, bubbles, flowers, confetti, clouds, snow, autumn leaves, desert, the street, under the sea, rain, fireworks, and the secret northern lights), with confetti. |
-| HOME | Back to the friend or game. Hold for 1 second for the grown-up controls. |
+| HOME | Back to the friend or game. Tap in normal play for a surprise friend. Hold for 1 second for the grown-up controls. |
 | SAVE | WRITE. Open your song on the staff. |
 | HOME held 1 s, then OCT- / OCT+ | The grown-ups' VOLUME: the most the MASTER knob can give (below). |
 | HOME held 1 s, then ALGORITHM | The grown-ups' NAME: the name the hello greets (below). |
@@ -67,7 +67,7 @@ In every setting, keys held together show their letters in their colors and, whe
 SEVEN, DIM, SUS), whatever their order (u/nutty_cartoon). GUESS and FOLLOW keep the keys at their own notes (OCT 0).
 
 A win has a sound too: when GUESS is right, a COPY ME round is played back, a FOLLOW song or a CHORDS lesson is finished, the
-friend plays a little cheer up the C chord (two notes for a small win, four for a whole song, lesson or STAR!). A new sky picked with REC gets the small cheer. The drum, bass and noise friends stay quiet, as their notes are no tune.
+friend plays a little cheer up the C chord (two notes for a small win, four for a whole song, lesson or STAR!). A surprise friend from HOME or a new sky from REC gets the small cheer. The drum, bass and noise friends stay quiet, as their notes are no tune.
 
 ## Stars and secrets
 

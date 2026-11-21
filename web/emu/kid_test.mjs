@@ -623,6 +623,30 @@ const newDevice = async (nor, binary = fs.readFileSync(wasmPath)) => {
   return { e, run, buttons, tap, key, image };
 };
 
+async function checkSurpriseFriend() {
+  const { e, run, tap } = await newDevice();
+
+  let changed = true;
+  for (let i = 0; i < 12; i++) {
+    const previous = e.web_kid_friend();
+    tap(B.HOME);
+    const next = e.web_kid_friend();
+    changed &&= next !== previous && next < NFP;
+  }
+  check("HOME in Rainbow play always picks a different unlocked friend", changed && e.web_kid_view() === 0);
+
+  const friend = e.web_kid_friend();
+  tap(B.SAVE);
+  e.web_enc(EN.PRESETS, 1); run(120);
+  tap(B.HOME);
+  check("HOME from WRITE returns to the previous friend", e.web_kid_friend() === friend);
+  tap(B.ARP); tap(B.HOME);
+  check("HOME from DRUMS returns to the previous friend", e.web_kid_friend() === friend);
+  tap(B.HOME);
+  check("a second HOME tap picks a surprise friend", e.web_kid_friend() !== friend);
+}
+await checkSurpriseFriend();
+
 async function checkWriteNavigation() {
   const { e, buttons, tap, key } = await newDevice();
   const lit = (b) => !!((e.web_lit_buttons() >> b) & 1);
