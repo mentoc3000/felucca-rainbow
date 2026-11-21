@@ -29,6 +29,7 @@ WORDS = {
     # games, secrets, the grown-ups' settings
     "YES!": "ISSO!", "TRY AGAIN": "DE NOVO", "LISTEN": "OUÇA", "YOUR TURN": "SUA VEZ", "YAY!": "EBA!",
     "STAR!": "ESTRELA!", "NEW HAT!": "CHAPÉU NOVO!", "NEW FRIEND!": "AMIGO NOVO!", "NEW SKY!": "CÉU NOVO!",
+    "REC UNDO": "REC DESFAZ", "UNDONE": "DESFEITO",
     "NEW SONG": "MÚSICA NOVA", "NO HAT": "SEM CHAPÉU", "STARS": "ESTRELAS", "LOOK-ALIKES OFF": "SÓSIAS NÃO",
     "STAFF ON": "PAUTA SIM", "STAFF OFF": "PAUTA NÃO", "KEY": "TOM",
     "LOOK-ALIKES ON": "SÓSIAS SIM", "HI!": "OI!", "HI": "OI", "YOUR NAME": "SEU NOME", "PRESETS  LETTER": "PRESETS  LETRA",

@@ -983,6 +983,63 @@ check("PLAY again stops it", ex.web_playing() === 0);
   render(1500);
 }
 
+// WRITE undo covers a column, a whole song, and a clear during playback.
+{
+  const wasm = fs.readFileSync(wasmPath);
+  const boot = async (nor) => {
+    const e = (await WebAssembly.instantiate(wasm, {})).instance.exports;
+    e._initialize();
+    const flash = new Uint8Array(e.memory.buffer, e.web_nor(), e.web_nor_size());
+    if (nor) flash.set(nor);
+    else e.web_nor_erase();
+    e.web_boot();
+    const tick = (ms) => { for (let i = 0; i < Math.round(ms * 44.1); i += 128) e.web_render(128); };
+    const tap = (b, ms = 60) => { e.web_buttons(1 << b); tick(ms); e.web_buttons(0); tick(120); };
+    const key = (mask) => { e.web_keys(mask); tick(100); e.web_keys(0); tick(150); };
+    const notes = () => Array.from({ length: 64 }, (_, i) => e.web_kid_wnote(i >> 1, i & 1));
+    tick(6500);
+    tap(B.SAVE);
+    return { e, flash, tick, tap, key, notes };
+  };
+  const showsUndo = (e) => [0, 1, 2].map(i => String.fromCharCode(e.web_kid_txt(i))).join("") === "REC";
+  const a = await boot();
+  a.key((1 << 7) | (1 << 11)); a.key(1 << 14);                      // C+E in column 0, G in column 1
+  const written = a.notes();
+  a.tap(B.OCTDN); a.tap(B.OCTDN);
+  a.tap(B.HOME);
+  check("WRITE undo: HOME clears the chord and shows the REC prompt",
+        a.e.web_kid_wnote(0, 0) === 0 && a.e.web_kid_wnote(1, 0) === 15 && showsUndo(a.e));
+  a.tap(B.HOME);                                                    // a second wipe of the empty column keeps the undo
+  a.tap(B.REC);
+  check("..tap REC to bring back the chord", a.notes().every((v, i) => v === written[i]) && a.e.web_step(0, 0) === 60);
+  a.tap(B.REC);
+  check("..another tap leaves the song alone", a.notes().every((v, i) => v === written[i]));
+
+  a.tap(B.REC, 2300);
+  a.tick(1500);
+  check("..hold REC to clear the whole song and see the REC prompt", a.notes().every(v => v === 0) && showsUndo(a.e));
+  a.tick(3500);                                                     // let the empty song reach flash before restoring it
+  a.tap(B.REC);
+  check("..a short tap brings the whole song back", a.notes().every((v, i) => v === written[i]));
+  a.tap(B.SAVE);
+  const b = await boot(a.flash);
+  check("..the restored song is kept over power-off", b.notes().every((v, i) => v === written[i]));
+
+  const c = await boot();
+  c.key((1 << 7) | (1 << 11)); c.key(1 << 14);
+  c.tap(B.PLAY);
+  c.tap(B.HOME);                                                    // still playing column zero at HOME release
+  check("..HOME can clear the playing column", c.e.web_playing() === 1 && c.e.web_kid_wnote(0, 0) === 0 && c.e.web_kid_wnote(1, 0) === 15);
+  c.tap(B.REC);
+  check("..REC restores it while the song keeps playing", c.e.web_playing() === 1 && c.notes().every((v, i) => v === written[i]));
+  c.tap(B.PLAY);
+
+  c.tap(B.REC, 2300);
+  c.key(1 << 17);                                                    // writing a new note uses up the one undo
+  c.tap(B.REC);
+  check("..REC cannot replace a new note with the old song", c.e.web_kid_wnote(0, 0) === 18 && c.e.web_kid_wnote(1, 0) === 0);
+}
+
 for (const r of [EN.K1, EN.K2, EN.K3, EN.K4, EN.ALGO, EN.SELECT]) { ex.web_enc(r, 3); render(200); }
 for (const b of [B.FX, B.SCL, B.ENV, B.LFO, B.EDIT, B.GLO, B.ARP, B.SEQ, B.REC, B.HOME]) { ex.web_buttons(1 << b); render(60); ex.web_buttons(0); render(300); }
 shot("knobs");

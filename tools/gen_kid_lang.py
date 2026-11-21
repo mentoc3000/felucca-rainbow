@@ -91,8 +91,8 @@ def shown(s):
 
 ONE_LINE = {"KICK", "SNARE", "CLAP", "HI-HAT", "OPEN HAT", "RIM", "COWBELL", "CYMBAL", "TOM", "CONGA", "CLAVE", "CYM",
             "SHAKER"}                     # (kid_drum_word: the band says them on one line, so 13 letters at most)
-WRITE_WORDS = {"NO BEAT", "NEW SONG", "WRITE", "LOOP", "DANCE", "MARCH", "SPOOKY", "ROCK", "DISCO", "HIP HOP", "TRAIN",
-               "SAMBA", "REGGAE", "LULLABY", "HOEDOWN", "LOFI", "ACID", "POLKA"}   # (kid.c KID_BEATS: the beats' names)
+WRITE_WORDS = {"NO BEAT", "NEW SONG", "WRITE", "LOOP", "REC UNDO", "UNDONE", "DANCE", "MARCH", "SPOOKY",
+               "ROCK", "DISCO", "HIP HOP", "TRAIN", "SAMBA", "REGGAE", "LULLABY", "HOEDOWN", "LOFI", "ACID", "POLKA"}
 
 
 def fits(code, src, en, tr):

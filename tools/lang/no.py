@@ -44,6 +44,7 @@ WORDS = {
     # games, secrets, the grown-ups' settings
     "YES!": "JA!", "TRY AGAIN": "PRØV IGJEN", "LISTEN": "LYTT", "YOUR TURN": "DIN TUR", "YAY!": "HURRA!",
     "STAR!": "STJERNE!", "NEW HAT!": "NY HATT!", "NEW FRIEND!": "NY VENN!", "NEW SKY!": "NY HIMMEL!",
+    "REC UNDO": "REC ANGRE", "UNDONE": "GJENOPPRETTET",
     "NEW SONG": "NY SANG", "NO HAT": "INGEN HATT", "STARS": "STJERNER", "LOOK-ALIKES OFF": "KOPIER AV",
     "STAFF ON": "NOTER PÅ", "STAFF OFF": "NOTER AV", "KEY": "TONEART",
     "LOOK-ALIKES ON": "KOPIER PÅ", "HI!": "HEI!", "HI": "HEI", "YOUR NAME": "DITT NAVN",
