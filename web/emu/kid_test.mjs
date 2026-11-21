@@ -775,6 +775,38 @@ async function checkDrumGrid() {
 }
 await checkDrumGrid();
 
+async function checkDrumClear() {
+  const device = await newDevice();
+  const { e, run, buttons, tap, key } = device;
+  const steps = (fw) => Array.from({ length: 16 }, (_, i) => fw.web_step(3, i) >> 8);
+  const empty = (fw) => steps(fw).every(hit => !hit);
+
+  tap(B.ARP);
+  for (const drum of [1, 3, 5]) {
+    key(drum); key(0); key(26);
+  }
+  tap(B.HOME); tap(B.ARP);
+  tap(B.REC);
+  check("DRUMS REC tap leaves every row intact", steps(e)[0] === 0x0d && steps(e)[15] === 0x0d);
+
+  tap(B.PLAY);
+  buttons(1 << B.REC, 1700);
+  check("DRUMS keeps the pattern before the REC hold threshold", steps(e)[0] === 0x0d);
+  run(550);
+  check("DRUMS REC hold clears all steps without stopping the loop", empty(e) && e.web_playing());
+  key(0);
+  buttons(0, 200);
+  check("REC release after clearing keeps a new hit", steps(e)[0] === 8);
+  buttons(1 << B.REC, 2250);
+  buttons(0, 200);
+  tap(B.HOME);
+
+  const reboot = await newDevice(device.image());
+  reboot.tap(B.ARP);
+  check("clearing the drum pattern survives a power cycle", empty(reboot.e));
+}
+await checkDrumClear();
+
 async function checkDrumRestore() {
   const { e, run, tap } = await newDevice();
   const drumBand = () => new Uint16Array(e.memory.buffer, e.web_screen(), 240 * 240).slice(184 * 240).join(",");

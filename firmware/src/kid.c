@@ -493,7 +493,7 @@ static struct {
     kid_st_t st[KID_ST_N];
     uint32_t st_ms, st_t0, st_sig;      /* the last note; the last entry's start; what the panel last showed */
     uint8_t vol_open, vol_hold;         /* the VOLUME is open (HOME held 1 s); HOME is down, since vol_ms */
-    uint32_t vol_ms;
+    uint32_t vol_ms, rec_ms;       /* REC press in WRITE or DRUMS, 0 when consumed */
     uint32_t sleep_ms;                  /* SLEEPY on since (fm1_ms | 1), 0 none */
     uint8_t zz_was;                     /* SLEEPY's Z was drawn last frame, at zx0, zy0 */
     int16_t zx0, zy0;
@@ -530,12 +530,12 @@ static struct {
 #define KW_PAGE 8u
 #define KW_SAVE_MS 4000u                /* saved this long after the last change (while stopped), and on leaving */
 static struct {
-    uint8_t cur, stamp, adv, dirty, beat, loaded, clear_on;
+    uint8_t cur, stamp, adv, dirty, beat, loaded;
     uint8_t floor;                      /* the loop is at least this many columns (a new song played empty: two bars, to play into) */
     uint8_t band[3];                    /* the friend of each track 0..2, 0xFF none */
     uint8_t note[KW_COLS][2];           /* (track << 5) | (key + 1), 0 empty */
     int16_t bpm;
-    uint32_t edit_ms, clear_ms;
+    uint32_t edit_ms;
     uint32_t sig, col_ms;               /* the page drawn last; when the playing column changed */
     int16_t col, hx, hy;                /* the playing column drawn last (-1 none); where the hopping friend was */
     uint8_t hop_fr;                     /* the friend hopping along (the playing column's) */
@@ -1499,7 +1499,7 @@ static void kw_leave(void)
 {
     uint32_t s;
     kw_save();
-    kw.clear_on = kw.adv = kw.floor = 0;
+    kw.adv = kw.floor = 0;
     for (s = 0; s < 3u; s++) {
         track_defaults_steps(&trk[s]);
         trk[s].p[P_SDIV] = 2;
@@ -2164,6 +2164,18 @@ static void kd_keys(uint32_t notes)
     }
 }
 
+static void kd_clear(void)
+{
+    uint32_t step;
+    memset(kd.hit, 0, sizeof kd.hit);
+    fm1_irq_off();
+    for (step = 0; step < KD_STEPS; step++)
+        step_clear(&trk[3].step[step]);
+    fm1_irq_on();
+    kd_changed();
+    kid.full = 1;
+}
+
 static int32_t kd_step(void)
 {
     return song.playing ? (int32_t)(trk[3].seq_idx % KD_STEPS) : -1;
@@ -2178,6 +2190,7 @@ static int kid_switch_pending(void)
 {
     if (kid.view == kid.next_view)
         return 0;
+    kid.rec_ms = 0;
     if (transport_busy()) {
         transport_req = 2;
         return 1;
@@ -2215,6 +2228,29 @@ static int kid_switch_pending(void)
     kid.help_ms = kid.hello_ms = 0;
     kid.full = 1;
     return 1;
+}
+
+static void kid_edit_rec(uint32_t held)
+{
+    int clear;
+    if (!kid.rec_ms)
+        return;
+    clear = (fm1_ms | 1u) - kid.rec_ms >= 2000u;
+    if (!clear && (held & (1u << panel.btn[B_REC])))
+        return;
+    kid.rec_ms = 0;
+    if (kid.view == KV_DRUMS) {
+        if (clear)
+            kd_clear();
+    } else if (clear) {
+        kw_clear();
+        kid_hint(KH_NEWSONG);
+        kid.party_ms = fm1_ms | 1u;
+    } else {
+        uint32_t c = (uint32_t)kw_at() % KW_COLS;
+        kw.note[c][0] = kw.note[c][1] = 0;
+        kw_changed();
+    }
 }
 
 static void kid_input(void)
@@ -2326,11 +2362,8 @@ static void kid_input(void)
             kid_hint(KH_BEAT);
             break;
         case B_REC:
-            if (kid.view == KV_DRUMS)
-                break;
-            if (KW_ON) {
-                kw.clear_on = 1;
-                kw.clear_ms = fm1_ms | 1u;
+            if (kid.view != KV_PLAY) {
+                kid.rec_ms = fm1_ms | 1u;
                 break;
             }
             do
@@ -2406,22 +2439,10 @@ static void kid_input(void)
     }
     if (kid_switch_pending())
         return;
-    if (KW_ON) {
-        if (kw.clear_on && (fm1_ms | 1u) - kw.clear_ms >= 2000u) {
-            kw.clear_on = 0;
-            kw_clear();
-            kid_hint(KH_NEWSONG);
-            kid.party_ms = fm1_ms | 1u;
-        } else if (kw.clear_on && !((held >> panel.btn[B_REC]) & 1u)) {
-            uint32_t c = (uint32_t)kw_at() % KW_COLS;
-            kw.clear_on = 0;
-            kw.note[c][0] = kw.note[c][1] = 0;
-            kw_changed();
-        }
+    kid_edit_rec(held);
+    if (KW_ON) {                                  /* WRITE: a key writes (kw_notes), the column is left when all are up */
         if (kw.dirty && !song.playing && fm1_ms - kw.edit_ms > KW_SAVE_MS)
             kw_save();
-    }
-    if (KW_ON) {                                  /* WRITE: a key writes (kw_notes), the column is left when all are up */
         if (notes)
             kw_notes(notes);
         if (kw.adv && !fm1_in.notes) {
