@@ -30,6 +30,9 @@ jobs:
       - name: Python packages
         run: python3 -m pip install Pillow fonttools playwright
 
+      - name: Check the assembled Pages links
+        run: python3 web/test_rainbow_pages.py
+
       - name: Generated headers
         run: python3 -c 'import sys; sys.path.insert(0, "tools"); import build; build.generate()'
 
