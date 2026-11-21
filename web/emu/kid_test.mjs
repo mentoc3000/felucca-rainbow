@@ -31,9 +31,9 @@ const render = (ms) => {
 };
 const px = (x, y) => { const v = new Uint16Array(mem.buffer, ex.web_screen(), 240 * 240)[y * 240 + x]; return ((v & 255) << 8) | (v >> 8); };
 const band = () => { const fb = new Uint16Array(mem.buffer, ex.web_screen(), 240 * 240); return fb.slice(190 * 240, 236 * 240).join(","); };
-const shot = (name) => {
+const shot = (name, e = ex) => {
   if (!outDir) return;
-  const fb = new Uint16Array(mem.buffer, ex.web_screen(), 240 * 240), b = Buffer.alloc(240 * 240 * 3);
+  const fb = new Uint16Array(e.memory.buffer, e.web_screen(), 240 * 240), b = Buffer.alloc(240 * 240 * 3);
   for (let i = 0; i < fb.length; i++) {
     const v = ((fb[i] & 255) << 8) | (fb[i] >> 8);
     b[i * 3] = (v >> 11) << 3; b[i * 3 + 1] = ((v >> 5) & 63) << 2; b[i * 3 + 2] = (v & 31) << 3;
@@ -471,32 +471,18 @@ check("PLAY again stops it", ex.web_playing() === 0);
     shot("accordion11");
     check("ACCORDION, the top key: fourths on F (F B E, and A where the engine has the voices)", bandHas(GRN) && bandHas(PINK) && bandHas(E_YEL));
     ex.web_keys(0); render(1200);
-    // ARP in ACCORDION: once, SPARKLE TUNE (the chord steady on track 3, the tune arpeggiated); twice, SPARKLE ALL; three times, off
-    const arp = () => { ex.web_buttons(1 << B.ARP); render(80); ex.web_buttons(0); render(150); };
-    const words = band();
-    arp();
-    const tuneWord = band();
-    ex.web_keys((1 << 8) | (1 << 19) | (1 << 23)); render(150);            // C#4 (C) with C5 and E5
-    let steady = true;
-    for (let i = 0; i < 6; i++) { render(60); if (ex.web_voices(2) < 3) steady = false; }
-    check(`ARP in ACCORDION: SPARKLE TUNE, the chord holds (${ex.web_voices(2)} voices on its own track) under the tune`, steady && tuneWord !== words);
-    ex.web_keys(0); render(800);
-    arp();
-    const allWord = band();
-    ex.web_keys(1 << 8); render(400);
-    check("..twice: SPARKLE ALL, the chord sparkles too (on the friend's track)", ex.web_voices(2) <= 1 && allWord !== tuneWord);   // (track 3:
-                                                  // the sub octave under it, one voice, not the chord)
-    ex.web_keys(0); render(800);
-    arp();
+    ex.web_buttons(1 << B.ARP); render(80); ex.web_buttons(0); render(250);
+    check("ARP in ACCORDION selects DRUMS", ex.web_kid_view() === 2);
+    ex.web_buttons(1 << B.HOME); render(80); ex.web_buttons(0); render(250);
     ex.web_keys(1 << 8); render(300);
-    check("..three times: off, the chord plain again", ex.web_voices(0) >= 3 && ex.web_voices(2) <= 1);
+    check("HOME from DRUMS brings back Accordion's chord", ex.web_voices(0) >= 3);
     ex.web_keys(0); render(1200);
   }
   ex.web_keys(1 << 14); render(300);                                          // G: its own note
   check("ACCORDION: a white key plays its own note (G teal, no chord)", bandHas(G_TEAL) && !bandHas(C_RED));
   ex.web_keys(0); render(1500);
-  ex.web_kid_friend_set(59); render(1200);       // (a friend that sings: HOME's surprise friend above is anyone, and
-  algo(1);                                        //  the bass, drum and noise friends cheer with no notes, on purpose)
+  ex.web_kid_friend_set(59); render(1200);     // a friend that sings its cheer
+  algo(1);
   render(400);
   peak = 0; render(1200);
   shot("guess");
@@ -610,9 +596,435 @@ check("PLAY again stops it", ex.web_playing() === 0);
   algo(-1); algo(-1); algo(-1); algo(-1); algo(-1); algo(-1); algo(-1); render(1500);
 }
 
+// Use a separate device for gestures that can leave Rainbow.
+const newDevice = async (nor, binary = fs.readFileSync(wasmPath)) => {
+  const e = (await WebAssembly.instantiate(binary, {})).instance.exports;
+  e._initialize();
+  if (nor) new Uint8Array(e.memory.buffer, e.web_nor(), e.web_nor_size()).set(nor);
+  else e.web_nor_erase();
+  e.web_boot();
+  e.web_master(1023);
+  const run = (ms, measure = false) => {
+    let peak = 0;
+    for (let k = 0; k < Math.round(ms * 44.1); k += 128) {
+      e.web_render(128);
+      if (measure) {
+        for (const sample of new Float32Array(e.memory.buffer, e.web_out_l(), 128))
+          peak = Math.max(peak, Math.abs(sample));
+      }
+    }
+    return peak;
+  };
+  const buttons = (mask, ms = 60) => { e.web_buttons(mask); run(ms); };
+  const tap = (button) => { buttons(1 << button); buttons(0, 250); };
+  const key = (k) => { e.web_keys(1 << k); run(100); e.web_keys(0); run(100); };
+  const image = () => new Uint8Array(e.memory.buffer, e.web_nor(), e.web_nor_size()).slice();
+  run(550);
+  return { e, run, buttons, tap, key, image };
+};
+
+async function checkSurpriseFriend() {
+  const { e, run, tap } = await newDevice();
+
+  let changed = true;
+  for (let i = 0; i < 12; i++) {
+    const previous = e.web_kid_friend();
+    tap(B.HOME);
+    const next = e.web_kid_friend();
+    changed &&= next !== previous && next < NFP;
+  }
+  check("HOME in Rainbow play always picks a different unlocked friend", changed && e.web_kid_view() === 0);
+
+  const friend = e.web_kid_friend();
+  tap(B.SAVE);
+  e.web_enc(EN.PRESETS, 1); run(120);
+  tap(B.HOME);
+  check("HOME from WRITE returns to the previous friend", e.web_kid_friend() === friend);
+  tap(B.ARP); tap(B.HOME);
+  check("HOME from DRUMS returns to the previous friend", e.web_kid_friend() === friend);
+  tap(B.HOME);
+  check("a second HOME tap picks a surprise friend", e.web_kid_friend() !== friend);
+}
+await checkSurpriseFriend();
+
+async function checkWriteNavigation() {
+  const { e, buttons, tap, key } = await newDevice();
+  const lit = (b) => !!((e.web_lit_buttons() >> b) & 1);
+  check("power-on: Rainbow play with HOME lit", e.web_kid_view() === 0 && lit(B.HOME));
+  tap(B.SAVE);
+  check("SAVE selects WRITE and lights it", e.web_kid_view() === 1 && lit(B.SAVE) && !lit(B.HOME));
+  key(7);
+  const note = e.web_kid_wnote(0, 0);
+  tap(B.PLAY); tap(B.SAVE);
+  check("SAVE in WRITE leaves the song playing", e.web_kid_view() === 1 && e.web_playing() === 1);
+  tap(B.HOME);
+  check("HOME leaves WRITE and stops the song", e.web_kid_view() === 0 && e.web_playing() === 0);
+  tap(B.PLAY);
+  check("the backing bass and drums step together after WRITE",
+        e.web_rainbow_step_index(3) > 0 && e.web_rainbow_step_index(1) === e.web_rainbow_step_index(3));
+  tap(B.PLAY);
+  tap(B.SAVE);
+  check("WRITE reopens with its note", e.web_kid_view() === 1 && note !== 0 && e.web_kid_wnote(0, 0) === note);
+  const limit = e.web_master_q12();
+  buttons(1 << B.HOME, 1200);
+  buttons((1 << B.HOME) | (1 << B.OCTDN));
+  buttons(0, 250);
+  check("HOME hold adjusts volume from WRITE and keeps WRITE open", e.web_kid_view() === 1 && e.web_master_q12() < limit);
+}
+
+await checkWriteNavigation();
+
+for (const [fromWrite, first] of [[false, B.SAVE], [true, B.HOME]]) {
+  const { e, buttons, tap } = await newDevice();
+  if (fromWrite) tap(B.SAVE);
+  buttons(1 << first, 140);
+  buttons((1 << B.HOME) | (1 << B.SAVE), 1200);
+  check("exit chord does not change Rainbow view before the hold",
+        e.web_kid_active() && e.web_kid_view() === Number(fromWrite));
+  buttons((1 << B.HOME) | (1 << B.SAVE), fromWrite ? 3100 : 2100);
+  check("holding the exit chord extra time leaves the synth on HOME", !e.web_kid_active() && e.web_synth_home());
+  buttons(1 << B.SAVE, 100);
+  buttons(0, 400);
+  check("releasing HOME then SAVE leaves the synth on HOME", !e.web_kid_active() && e.web_synth_home() && !e.web_playing());
+}
+
+{
+  const { e, run, buttons, tap, key } = await newDevice();
+  tap(B.SAVE); key(7); tap(B.HOME);
+  e.web_keys(1 << 7); run(100);
+  tap(B.SAVE);
+  buttons(1 << B.PLAY, 45);
+  check("WRITE sounds the first note while the old C key is held", e.web_gate_note(0) === 60);
+  e.web_keys(0); buttons(0, 40);
+  check("releasing the old C key leaves the new WRITE note sounding", e.web_gate_note(0) === 60);
+}
+
+{
+  const { e, buttons, tap, key } = await newDevice();
+  tap(B.SAVE); key(7); key(11); tap(B.OCTDN);
+  buttons(1 << B.REC, 2020);
+  buttons(0, 150);
+  check("REC held just over two seconds erases the whole song", !e.web_kid_wnote(0, 0) && !e.web_kid_wnote(1, 0));
+}
+
+async function checkDrumNavigation() {
+  const { e, run, buttons, tap, key } = await newDevice();
+  const modeMask = (1 << B.HOME) | (1 << B.SAVE) | (1 << B.ARP);
+  const destinations = [B.HOME, B.SAVE, B.ARP];
+  for (const [from, to] of [[0, 1], [1, 2], [2, 0], [0, 2], [2, 1], [1, 0]]) {
+    tap(destinations[from]);
+    tap(B.PLAY);
+    tap(destinations[to]);
+    check(`mode ${from} → ${to} stops playback, lights the destination`,
+          e.web_kid_view() === to && !e.web_playing() && (e.web_lit_buttons() & modeMask) === (1 << destinations[to]));
+  }
+  tap(B.ARP);
+  if (e.web_kid_view() !== 2) return;
+  tap(B.PLAY); tap(B.ARP);
+  check("ARP in DRUMS leaves the loop playing", e.web_playing() === 1);
+  tap(B.SAVE);
+  key(7);
+  const note = e.web_kid_wnote(0, 0);
+  e.web_keys(1); run(100);
+  tap(B.ARP);
+  e.web_keys(0); run(100);
+  check("a key held from WRITE does not add a DRUMS hit", e.web_step(3, 0) === 0);
+  e.web_keys(1 << 26); run(100);
+  tap(B.SAVE);
+  e.web_keys(0); run(100);
+  check("a key held from DRUMS does not write another note",
+        e.web_kid_wnote(0, 0) === note && !e.web_kid_wnote(2, 0));
+  tap(B.ARP);
+  const volume = e.web_master_q12();
+  buttons(1 << B.HOME, 1200);
+  buttons((1 << B.HOME) | (1 << B.OCTDN));
+  buttons(0, 200);
+  check("HOME hold adjusts volume in DRUMS", e.web_kid_view() === 2 && e.web_master_q12() < volume);
+  buttons((1 << B.HOME) | (1 << B.SAVE), 3300);
+  buttons(0, 300);
+  check("HOME + SAVE exits DRUMS into the full synth", !e.web_kid_active());
+}
+await checkDrumNavigation();
+
+async function checkDrumGrid() {
+  const { e, run, tap, key } = await newDevice();
+  const cell = (step) => e.web_step(3, step) >> 8;
+  const pix = (x, y) => new Uint16Array(e.memory.buffer, e.web_screen(), 240 * 240)[y * 240 + x];
+  tap(B.ARP);
+  check("DRUMS starts with 16 empty steps", e.web_kid_view() === 2 && Array.from({length: 16}, (_, i) => cell(i)).every(x => !x));
+  if (e.web_kid_view() !== 2) return;
+
+  const initialOutline = pix(7, 61);
+  key(0); key(26);
+  check("the first and last white keys edit steps 1 and 16", cell(0) === 1 && cell(15) === 1);
+  check("the selected row's hits light their keys", (e.web_lit_keys() & ((1 << 26) | 1)) === ((1 << 26) | 1));
+  for (const [row, black] of [[0, 1], [1, 3], [2, 5]]) {
+    e.web_keys(1 << black);
+    const peak = run(140, true);
+    e.web_keys(0); run(850);
+    check(`black key ${row + 1} selects and auditions its drum`, e.web_kid_drum_row() === row && peak > 0.003);
+    if (row) key(0);
+  }
+  check("kick, clap, and hi-hat can share a step", cell(0) === 0x0d);
+  check("the selection outline moves with the drum row", pix(7, 61) !== initialOutline);
+  shot("drums_stopped", e);
+  const noPlayhead = pix(49, 26);
+  e.web_buttons(1 << B.PLAY); run(60); e.web_buttons(0); run(30);
+  shot("drums_playing", e);
+  check("PLAY shows a separate marker above the first step", e.web_playing() === 1 && pix(49, 26) !== noPlayhead);
+  run(180);
+  check("the playhead leaves the first step", pix(49, 26) === noPlayhead);
+  key(0);
+  check("editing the hat during playback leaves the kick and clap", e.web_playing() && cell(0) === 0x05);
+  tap(B.PLAY);
+
+  // A fresh loop with a hit added too late for the first pass of step 1.
+  key(1); key(0); key(26);
+  key(3); key(0);
+  run(600);
+  tap(B.PLAY);
+  key(0);
+  check("the white step keys never play a pitched note", !e.web_gate_count(0));
+  const imminent = run(1000, true);
+  const nextBar = run(1000, true);
+  check("a hit added after its step sounds on the next pass", imminent < 0.002 && nextBar > 0.003);
+  tap(B.PLAY);
+
+  e.web_enc(EN.SELECT, 1); run(60);
+  check("SELECT changes the DRUMS speed in 5 BPM steps", e.web_kid_drum_bpm() === 125);
+  for (const [turn, expected] of [[100, 180], [-100, 60]]) {
+    for (let i = 0; i < 10; i++) { e.web_enc(EN.SELECT, turn); run(30); }
+    check(`DRUMS tempo stops at ${expected} BPM`, e.web_kid_drum_bpm() === expected);
+  }
+}
+await checkDrumGrid();
+
+async function checkDrumClear() {
+  const device = await newDevice();
+  const { e, run, buttons, tap, key } = device;
+  const steps = (fw) => Array.from({ length: 16 }, (_, i) => fw.web_step(3, i) >> 8);
+  const empty = (fw) => steps(fw).every(hit => !hit);
+
+  tap(B.ARP);
+  for (const drum of [1, 3, 5]) {
+    key(drum); key(0); key(26);
+  }
+  tap(B.HOME); tap(B.ARP);
+  tap(B.REC);
+  check("DRUMS REC tap leaves every row intact", steps(e)[0] === 0x0d && steps(e)[15] === 0x0d);
+
+  tap(B.PLAY);
+  buttons(1 << B.REC, 1700);
+  check("DRUMS keeps the pattern before the REC hold threshold", steps(e)[0] === 0x0d);
+  run(550);
+  check("DRUMS REC hold clears all steps without stopping the loop", empty(e) && e.web_playing());
+  key(0);
+  buttons(0, 200);
+  check("REC release after clearing keeps a new hit", steps(e)[0] === 8);
+  buttons(1 << B.REC, 2250);
+  buttons(0, 200);
+  tap(B.HOME);
+
+  const reboot = await newDevice(device.image());
+  reboot.tap(B.ARP);
+  check("clearing the drum pattern survives a power cycle", empty(reboot.e));
+}
+await checkDrumClear();
+
+async function checkDrumKits() {
+  const device = await newDevice();
+  const { e, run, tap, key } = device;
+  const backingKit = e.web_rainbow_kit();
+  const kitName = () => String.fromCharCode(...Array.from({ length: 7 }, (_, i) => e.web_kid_txt(i)).filter(Boolean));
+
+  tap(B.ARP);
+  const seqDark = () => !((e.web_lit_buttons() | e.web_dim_buttons()) & (1 << B.SEQ));
+  check("DRUMS starts on kit 80 with SEQ dark", e.web_rainbow_kit() === 4 && seqDark());
+  key(0);
+  e.web_enc(EN.SELECT, 1); run(100);
+  tap(B.PLAY);
+  const kits = [[5, "10"], [6, "66"], [7, "55"], [8, "77"], [0, "STD"], [4, "80"]];
+  for (const [id, name] of kits) {
+    tap(B.SEQ);
+    check(`SEQ changes DRUMS to kit ${name} while the pattern plays`,
+          e.web_rainbow_kit() === id && kitName() === `KIT ${name}` &&
+          e.web_kid_drum_bpm() === 125 && (e.web_step(3, 0) >> 8) === 1 && e.web_playing());
+  }
+  check("SEQ stays dark after changing the kit", seqDark());
+
+  tap(B.SEQ);
+  tap(B.HOME);
+  check("HOME restores the backing beat's kit", e.web_rainbow_kit() === backingKit);
+  tap(B.ARP);
+  check("DRUMS reopens with the selected kit", e.web_rainbow_kit() === 5);
+
+  const reboot = await newDevice(device.image());
+  reboot.tap(B.ARP);
+  check("the drum kit saves alongside the pattern and speed",
+        reboot.e.web_rainbow_kit() === 5 && reboot.e.web_kid_drum_bpm() === 125 &&
+        (reboot.e.web_step(3, 0) >> 8) === 1);
+
+  if (process.env.RAINBOW_PRE_KIT_WASM) {
+    const old = await newDevice(undefined, fs.readFileSync(process.env.RAINBOW_PRE_KIT_WASM));
+    old.tap(B.ARP); old.key(26); old.tap(B.HOME);
+    const upgraded = await newDevice(old.image());
+    upgraded.tap(B.ARP);
+    check("an older saved pattern opens with kit 80", upgraded.e.web_rainbow_kit() === 4 &&
+          (upgraded.e.web_step(3, 15) >> 8) === 1);
+  }
+}
+await checkDrumKits();
+
+async function checkDrumKnobs() {
+  const device = await newDevice();
+  const { e, run, tap, key } = device;
+  const mix = (fw) => [0, 1, 2].map(row => fw.web_rainbow_drum_level(row));
+  const turn = (knob, count) => { e.web_enc(knob, count); run(70); };
+  const pixel = (x, y) => new Uint16Array(e.memory.buffer, e.web_screen(), 240 * 240)[y * 240 + x];
+
+  const dots = [[236, 52, 64], [255, 140, 30], [255, 216, 46]]
+    .map(([r, g, b]) => ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+  const meterShows = (filled) => dots.every((color, i) => {
+    const stored = pixel(100 + 24 * i, 230);
+    return (((stored & 255) << 8) | (stored >> 8)) === (i < filled ? color : WHITE);
+  });
+  const label = () => Array.from({ length: 12 }, (_, i) => e.web_kid_txt(i)).join(",");
+
+  const backingMix = mix(e);
+  const backingSwing = e.web_rainbow_drum_swing();
+  tap(B.ARP);
+  check("DRUMS defaults to full levels and straight timing", mix(e).every(v => v === 127) && e.web_rainbow_drum_swing() === 0);
+  const drumsLabel = label();
+  key(0);
+  tap(B.PLAY);
+  const fullDot = pixel(32, 79);
+  turn(EN.K1, -1);
+  check("knob 1 lowers just the kick and updates its dots", mix(e).join() === "102,127,127" && pixel(32, 79) !== fullDot);
+  shot("drum_kick_level", e);
+  check("turning knob 1 shows two colored dots in the band", meterShows(2) && label() !== drumsLabel);
+  const kickLabel = label();
+  turn(EN.K2, -1);
+  check("turning knob 2 names the clap even at the same level", meterShows(2) && label() !== kickLabel);
+  turn(EN.K2, -1);
+  check("lowering the clap shows one colored dot", meterShows(1));
+  turn(EN.K3, -3);
+  check("muting the hi-hat shows three empty dots", meterShows(0));
+  run(1600);
+  check("DRUMS title returns after the knob hint", label() === drumsLabel);
+  turn(EN.K3, -1);
+  check("turning past the level limit still shows the meter", meterShows(0));
+  check("knobs 2 and 3 adjust clap and hi-hat independently", mix(e).join() === "102,74,0");
+  turn(EN.K4, 1);
+  shot("drum_swing", e);
+  check("knob 4 adds swing to the playing drum track", e.web_rainbow_drum_swing() === 30 && e.web_playing() && meterShows(2));
+  turn(EN.K4, 7);
+  check("knob 4 clamps at the third swing setting", e.web_rainbow_drum_swing() === 60 && meterShows(3));
+  turn(EN.K4, -7);
+  check("turning knob 4 left restores straight timing", e.web_rainbow_drum_swing() === 0 && meterShows(1));
+  turn(EN.K4, 2);
+  check("the mix keeps the same tempo and hits", e.web_kid_drum_bpm() === 120 && (e.web_step(3, 0) >> 8) === 1);
+  tap(B.HOME);
+  check("HOME restores the backing beat's levels and swing",
+        mix(e).join() === backingMix.join() && e.web_rainbow_drum_swing() === backingSwing);
+
+  const reboot = await newDevice(device.image());
+  reboot.tap(B.ARP);
+  check("the drum levels and swing save with the pattern", mix(reboot.e).join() === "102,74,0" &&
+        reboot.e.web_rainbow_drum_swing() === 60 && (reboot.e.web_step(3, 0) >> 8) === 1);
+
+  if (process.env.RAINBOW_PRE_MIX_WASM) {
+    const old = await newDevice(undefined, fs.readFileSync(process.env.RAINBOW_PRE_MIX_WASM));
+    old.tap(B.ARP); old.key(26); old.tap(B.SEQ); old.tap(B.HOME);
+    const upgraded = await newDevice(old.image());
+    upgraded.tap(B.ARP);
+    check("old drum patterns retain their kit with full levels and straight timing",
+          upgraded.e.web_rainbow_kit() === 5 && (upgraded.e.web_step(3, 15) >> 8) === 1 &&
+          mix(upgraded.e).every(v => v === 127) && upgraded.e.web_rainbow_drum_swing() === 0);
+  }
+}
+await checkDrumKnobs();
+
+async function checkDrumRestore() {
+  const { e, run, tap } = await newDevice();
+  const drumBand = () => new Uint16Array(e.memory.buffer, e.web_screen(), 240 * 240).slice(184 * 240).join(",");
+  let defaultBand;
+  for (const beat of ["DANCE", "BREAK", "CHORDS"]) {
+    if (beat === "CHORDS") {
+      for (let i = 0; i < 6; i++) { e.web_enc(EN.ALGO, 1); run(60); }
+      tap(B.SEQ);
+    } else if (beat === "BREAK") {
+      for (let i = 0; i < 21 && e.web_kid_beat() !== 20; i++) tap(B.SEQ);
+    }
+    tap(B.PLAY);
+    const before = [e.web_kid_beat(), e.web_kid_friend(), e.web_rainbow_bpm(), e.web_kid_lesson(), e.web_rainbow_kit()];
+    tap(B.ARP);
+    if (e.web_kid_view() !== 2) return;
+    if (beat === "DANCE") defaultBand = drumBand();
+    tap(B.PLAY);
+    tap(B.HOME);
+    const after = [e.web_kid_beat(), e.web_kid_friend(), e.web_rainbow_bpm(), e.web_kid_lesson(), e.web_rainbow_kit()];
+    check(`DRUMS restores ${beat}, including its sound and tempo`, before.every((v, i) => v === after[i]));
+  }
+  e.web_enc(EN.ALGO, -1); run(60); // CHORDS → FOLLOW
+  tap(B.ARP);
+  check("DRUMS title looks the same when opened from FOLLOW", drumBand() === defaultBand);
+}
+await checkDrumRestore();
+
+async function checkDrumPowerCycle() {
+  const baselinePath = process.env.RAINBOW_BASELINE_WASM;
+  const writeNotes = ({ e }) => Array.from({ length: 3 }, (_, i) => e.web_kid_wnote(i, 0));
+  const drumSteps = ({ e }) => Array.from({ length: 16 }, (_, i) => e.web_step(3, i) >> 8);
+  if (baselinePath) {
+    const old = await newDevice(undefined, fs.readFileSync(baselinePath));
+    old.tap(B.SAVE);
+    for (const key of [7, 11, 14]) old.key(key);
+    for (let i = 0; i < 18; i++) old.tap(B.SEQ);
+    old.run(4200);
+    const upgraded = await newDevice(old.image());
+    upgraded.tap(B.SAVE);
+    check("existing firmware's WRITE notes and backing beat open after upgrade",
+          writeNotes(upgraded).every((v, i) => v && v === writeNotes(old)[i]) &&
+          upgraded.e.web_kid_wbeat() === 18);
+    upgraded.tap(B.ARP);
+    check("older settings start DRUMS empty at 120 BPM", drumSteps(upgraded).every(x => !x) && upgraded.e.web_kid_drum_bpm() === 120);
+  }
+
+  const writer = await newDevice();
+  writer.tap(B.ARP);
+  writer.tap(B.PLAY);
+  writer.key(0);
+  writer.key(3); writer.key(7);
+  writer.key(5); writer.key(26);
+  writer.e.web_enc(EN.SELECT, 1); writer.run(100);
+  const hits = drumSteps(writer);
+  writer.tap(B.SAVE);
+  for (const key of [7, 11, 14]) writer.key(key);
+  const notes = writeNotes(writer);
+  writer.tap(B.HOME);
+  const rebooted = await newDevice(writer.image());
+  rebooted.tap(B.SAVE);
+  check("WRITE and DRUMS save independently", writeNotes(rebooted).every((v, i) => v && v === notes[i]) && !rebooted.e.web_playing());
+  rebooted.tap(B.ARP);
+  check("live DRUMS edits and speed survive a power cycle", hits.some(Boolean) &&
+        drumSteps(rebooted).every((v, i) => v === hits[i]) && rebooted.e.web_kid_drum_bpm() === 125 && !rebooted.e.web_playing());
+
+  rebooted.key(1); rebooted.key(26); rebooted.run(4200);
+  const idle = await newDevice(rebooted.image());
+  idle.tap(B.ARP);
+  check("DRUMS saves changes while stopped without leaving", (drumSteps(idle)[15] & 1) === 1);
+  idle.key(5); idle.key(0); idle.tap(B.PLAY);
+  idle.buttons((1 << B.HOME) | (1 << B.SAVE), 3300);
+  idle.buttons(0, 600);
+  const afterExit = await newDevice(idle.image());
+  afterExit.tap(B.ARP);
+  check("HOME + SAVE saves a playing drum loop before leaving", (drumSteps(afterExit)[0] & 8) === 8);
+}
+await checkDrumPowerCycle();
+
 // WRITE (SAVE): the child's own song. A key writes a note (a friend in a ball of the note's color) and the column moves on, the
-// same key again takes it out, HOME wipes the column, PLAY plays it back, it is kept over a power-off, REC held 2 s
-// starts a new one, and SAVE goes back to playing
+// same key again takes it out, REC wipes the column, PLAY plays it back, and it is kept over a power-off. REC held 2 s
+// starts a new song. HOME goes back to playing.
 {
   const col = (r, g, b) => ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
   const C_RED = col(236, 40, 52), G_TEAL = col(30, 176, 150), A_PUR = col(146, 84, 226);
@@ -635,8 +1047,8 @@ check("PLAY again stops it", ex.web_playing() === 0);
   check("the same key again takes its note out", ball(3, 5) !== A_PUR);
   check("WRITE: removing the note turns its LED off", ex.web_lit_keys() === 0);
   key(14);                                                                    // a G there instead, then column 4
-  tapb(B.OCTDN); tapb(B.HOME);                                                // HOME wipes column 3
-  check("HOME wipes the column", ball(3, 4) !== G_TEAL && ball(2, 4) === G_TEAL);
+  tapb(B.OCTDN); tapb(B.REC);                                                 // REC wipes column 3
+  check("REC tap wipes only the selected column", ball(3, 4) !== G_TEAL && ball(2, 4) === G_TEAL);
   ex.web_keys((1 << 7) | (1 << 11)); render(150); ex.web_keys(0); render(250);   // C and E together: one column
   check("two keys together: a chord in one column", ball(3, 0) === C_RED && ball(3, 2) !== ball(3, 1));
   tapb(B.OCTDN);
@@ -678,10 +1090,12 @@ check("PLAY again stops it", ex.web_playing() === 0);
   const p2 = (x, y) => { const v = new Uint16Array(e2.memory.buffer, e2.web_screen(), 240 * 240)[y * 240 + x]; return ((v & 255) << 8) | (v >> 8); };
   check("kept over a power-off: the next start's WRITE has the song", p2(46 + 10, 128 + 9) === C_RED && p2(46 + 2 * 23 + 10, 128 - 24 + 9) === G_TEAL);
   check(`..and its beat (${wb}, as written)`, wb >= 16 && e2.web_kid_wbeat() === wb);
-  tapb(B.REC, 2300);
+  ex.web_buttons(1 << B.REC); render(1850);
+  check("REC hold has not erased a column before two seconds", ball(0, 0) === C_RED && ball(2, 4) === G_TEAL);
+  render(450); ex.web_buttons(0); render(250);
   check("REC held 2 s: a new, empty song", ball(0, 0) !== C_RED && ball(2, 4) !== G_TEAL);
   // loop and layer: PLAY on an empty song is a loop of two bars; a key is written where the beat is, to be heard the next
-  // time round; PRESETS another friend for another layer; HOME wipes the column that is playing
+  // time round; PRESETS another friend for another layer; REC wipes the column that is playing
   tapb(B.PLAY); render(700);
   check("WRITE, PLAY on an empty song: a loop of two bars (8 columns) to play into", ex.web_playing() === 1 && ex.web_kid_wlen() === 8);
   key(7); render(200);
@@ -696,8 +1110,8 @@ check("PLAY again stops it", ex.web_playing() === 0);
   check(`..and heard the next time round, with no key pressed (peak ${peak.toFixed(3)})`, peak > 0.02);
   const col1 = [...Array(32).keys()].find((c) => ex.web_kid_wnote(c, 0) || ex.web_kid_wnote(c, 1));
   for (let i = 0; i < 600 && ex.web_kid_wat() !== col1; i++) render(10);
-  tapb(B.HOME); render(100);
-  check("..HOME while it plays wipes the column that is playing (one of the two notes is left)", notes().length === 1);
+  tapb(B.REC); render(100);
+  check("..REC tap while it plays wipes the column that is playing (one of the two notes is left)", notes().length === 1);
   tapb(B.PLAY); render(300);
   tapb(B.REC, 2300);
   check("..a new song: empty again, a loop of one bar", notes().length === 0 && ex.web_kid_wlen() === 4);
@@ -708,13 +1122,13 @@ check("PLAY again stops it", ex.web_playing() === 0);
   for (let s = 0; s < 3; s++) if (ex.web_step(s, 0) >> 8) drum = ex.web_step(s, 0);
   check(`a drum friend's note is the drum its key plays (a kick hit, not a pitch: ${drum.toString(16)})`, drum > 0 && ((drum >> 8) & 1) === 1);
   tapb(B.REC, 2300);
-  tapb(B.SAVE); render(1800);
-  check("SAVE again: back to playing (the friend's name, SAVE dark)", !((ex.web_lit_buttons() >> B.SAVE) & 1) && band() !== "");
+  tapb(B.HOME); render(1800);
+  check("HOME: back to playing (the friend's name, SAVE dark)", !((ex.web_lit_buttons() >> B.SAVE) & 1) && band() !== "");
   key(12); render(300);
   check("and the keys play as before", peak > 0.05);
 }
 
-// A tempo-only edit must survive the save timer, SAVE, and a power cycle.
+// A tempo-only edit must survive the save timer, leaving WRITE, and a power cycle.
 {
   const boot = async (nor) => {
     const e = (await WebAssembly.instantiate(fs.readFileSync(wasmPath), {})).instance.exports;
@@ -752,11 +1166,11 @@ check("PLAY again stops it", ex.web_playing() === 0);
   const b = await boot(a.flash());
   const restoredFast = b.beatMs();
   check(`..autosave restores the same note and fast tempo (${restoredFast} ms)`, b.e.web_kid_wnote(0, 0) === 8 && Math.abs(restoredFast - fast) < 20);
-  a.e.web_enc(EN.SELECT, -24); a.tick(60);                                   // 60 BPM, then SAVE before the timer
-  a.tap(B.SAVE);
+  a.e.web_enc(EN.SELECT, -24); a.tick(60);                                   // 60 BPM, then HOME before the timer
+  a.tap(B.HOME);
   const c = await boot(a.flash());
   const restoredSlow = c.beatMs();
-  check(`..SAVE restores the same note and slow tempo (${restoredSlow} ms)`, c.e.web_kid_wnote(0, 0) === 8 && Math.abs(restoredSlow - 1000) < 20);
+  check(`..leaving WRITE saves the same note and slow tempo (${restoredSlow} ms)`, c.e.web_kid_wnote(0, 0) === 8 && Math.abs(restoredSlow - 1000) < 20);
   a.tap(B.SAVE);
   const reentered = a.beatMs();
   check(`..going straight back into WRITE keeps its slow tempo (${reentered} ms)`, Math.abs(reentered - 1000) < 20);
@@ -1006,37 +1420,38 @@ check("PLAY again stops it", ex.web_playing() === 0);
   a.key((1 << 7) | (1 << 11)); a.key(1 << 14);                      // C+E in column 0, G in column 1
   const written = a.notes();
   a.tap(B.OCTDN); a.tap(B.OCTDN);
-  a.tap(B.HOME);
-  check("WRITE undo: HOME clears the chord and shows the REC prompt",
+  a.tap(B.REC);
+  check("WRITE undo: REC clears the chord and shows the REC prompt",
         a.e.web_kid_wnote(0, 0) === 0 && a.e.web_kid_wnote(1, 0) === 15 && showsUndo(a.e));
-  a.tap(B.HOME);                                                    // a second wipe of the empty column keeps the undo
+  a.tap(B.OCTUP); a.tap(B.OCTUP);
+  a.tap(B.REC);
+  check("..REC on a different empty column keeps the undo", a.e.web_kid_wnote(0, 0) === 0 && !showsUndo(a.e));
+  a.tap(B.OCTDN); a.tap(B.OCTDN);
   a.tap(B.REC);
   check("..tap REC to bring back the chord", a.notes().every((v, i) => v === written[i]) && a.e.web_step(0, 0) === 60);
-  a.tap(B.REC);
-  check("..another tap leaves the song alone", a.notes().every((v, i) => v === written[i]));
-
   a.tap(B.REC, 2300);
   a.tick(1500);
   check("..hold REC to clear the whole song and see the REC prompt", a.notes().every(v => v === 0) && showsUndo(a.e));
   a.tick(3500);                                                     // let the empty song reach flash before restoring it
   a.tap(B.REC);
   check("..a short tap brings the whole song back", a.notes().every((v, i) => v === written[i]));
-  a.tap(B.SAVE);
+  a.tap(B.HOME);
   const b = await boot(a.flash);
   check("..the restored song is kept over power-off", b.notes().every((v, i) => v === written[i]));
 
   const c = await boot();
   c.key((1 << 7) | (1 << 11)); c.key(1 << 14);
   c.tap(B.PLAY);
-  c.tap(B.HOME);                                                    // still playing column zero at HOME release
-  check("..HOME can clear the playing column", c.e.web_playing() === 1 && c.e.web_kid_wnote(0, 0) === 0 && c.e.web_kid_wnote(1, 0) === 15);
+  c.tap(B.REC);
+  check("..REC can clear the playing column", c.e.web_playing() === 1 && c.e.web_kid_wnote(0, 0) === 0 && c.e.web_kid_wnote(1, 0) === 15);
+  for (let i = 0; i < 480 && c.e.web_kid_wat() !== 0; i++) c.tick(10);
   c.tap(B.REC);
   check("..REC restores it while the song keeps playing", c.e.web_playing() === 1 && c.notes().every((v, i) => v === written[i]));
   c.tap(B.PLAY);
 
   c.tap(B.REC, 2300);
   c.key(1 << 17);                                                    // writing a new note uses up the one undo
-  c.tap(B.REC);
+  c.tap(B.REC);                                                    // tap the next, empty column
   check("..REC cannot replace a new note with the old song", c.e.web_kid_wnote(0, 0) === 18 && c.e.web_kid_wnote(1, 0) === 0);
 }
 

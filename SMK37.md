@@ -24,15 +24,15 @@ for another model.
 | 16 pads | the white keys F3..G5 (low notes on the bottom row), in their note colours; bright while held or while FOLLOW, GUESS or CHORDS light the key |
 | K1 | volume (never above the grown-ups' VOLUME) |
 | K2 / K3 / K4 | beat speed / how the keys play / next friend |
-| K5..K8 and faders 1..4 | BIG/SMALL, DAY/NIGHT, ECHO, WIGGLE (a fader takes over once it moves) |
+| K5..K8 and faders 1..4 | BIG/SMALL, DAY/NIGHT, ECHO, WIGGLE (a fader takes over once it moves). In DRUMS, turn K5..K7 for kick, clap and hi-hat levels, and K8 for swing. |
 | Pitch wheel | a slide, up to 2 semitones |
 | Mod wheel | more wiggle |
 | FX, SCALE, CHORD, NOTE REPEAT, PARA, GLOBE | HICCUP, BACKWARDS, SLEEPY, SQUEAKY, GIANT, FREEZE |
-| ARP / SEQ / SEQ PLAY / SEQ REC | sparkle / next beat (or song, lesson) / beat on-off / next sky |
-| PATCH (HOME) | a surprise friend |
-| BT (SAVE) | WRITE your own song, and back |
+| ARP | DRUMS. The first three black keys from F3 pick kick, clap and hi-hat. The 16 pads or white keys from F3 to G5 add and remove hits. |
+| SEQ / SEQ PLAY / SEQ REC | next beat (or song or lesson) / start and stop playback / next sky. In WRITE, tap SEQ REC to clear one column, or hold for two seconds to clear the song. Tap again on the cleared column or song to restore it. In DRUMS, tap SEQ to change the kit or hold SEQ REC for two seconds to clear the beat. |
+| PATCH (HOME) | Back to the friend or game. Tap in normal play for a surprise friend. |
+| BT (SAVE) | open the song in WRITE |
 | OCTAVE- / OCTAVE+ | bigger / smaller |
-| KNOB BANK | a surprise friend |
 | FADER BANK | the next sky |
 | < / > | the friend before / after |
 

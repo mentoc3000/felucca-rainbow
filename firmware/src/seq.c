@@ -83,8 +83,6 @@ enum { QN_OFF, QN_SNAP, QN_WHITE, QN_SEQ };      /* P_QUANT */
  * chord's notes upward from C3, so a hand drawn across them strums it. Read in the audio ISR, set by the main loop */
 static volatile uint8_t kb_strum;                 /* on */
 static volatile uint8_t kb_accord;                /* ACCORDION (kid.c): a black key plays its chord (seq.c key_on), F3 .. E4 */
-static volatile uint8_t kb_accord_trk;            /* .. and on this track, 0 the key's own (kid.c: the tune's arp leaves the
-                                                   * chords alone) */
 static volatile uint8_t kb_strum_root, kb_strum_minor;   /* the chord picked (a pitch class, C major to begin with) */
 /* Rainbow mode's sub octave (kid.c kid_sub): a key also plays, quietly, an octave under its lowest note on track 3
  * (KB_SUB_TRK), so the small speaker and children's headphones get some warmth under the friend */
@@ -690,6 +688,17 @@ static __attribute__((noinline)) void kb_lat(uint32_t k)
 static uint8_t ext_note[FM1_NKEY], ext_trk[FM1_NKEY];   /* note + 1 sounding, 0 = none */
 static volatile int16_t smk_bend14;             /* the pitch wheel, -8192..8191 (main.c smk_wheels) */
 static volatile uint8_t smk_modw;               /* the mod wheel, 0..127 */
+static void ext_key_off(uint32_t k)
+{
+    uint32_t n, t;
+    if (!ext_note[k])
+        return;
+    n = ext_note[k] - 1u;
+    t = ext_trk[k] % NTRK;
+    input_off(&trk[t], n);
+    midi_out_event(0x08u | (0x80u | trk_midi_ch(t)) << 8 | n << 16);
+    ext_note[k] = 0;
+}
 static void ext_keys_block(void)
 {
     int32_t e;
@@ -700,13 +709,7 @@ static void ext_keys_block(void)
         if (k >= FM1_NKEY)
             continue;
         if (!v) {
-            if (ext_note[k]) {
-                n = ext_note[k] - 1u;
-                mc = trk_midi_ch(ext_trk[k] % NTRK);
-                input_off(&trk[ext_trk[k] % NTRK], n);
-                midi_out_event(0x08u | (0x80u | mc) << 8 | n << 16);
-                ext_note[k] = 0;
-            }
+            ext_key_off(k);
             continue;
         }
         if (ext_note[k] || kb_boot_hold || kb_asleep || song.grid || (fm1_in.buttons & kb_mask) || kb_lock)
@@ -746,7 +749,7 @@ static void keyboard_block(void)
         if (!((ch >> k) & 1u))
             continue;
         if ((cur >> k) & 1u) {                    /* the selected track; the key-up goes to the same one */
-            kb_trk[k] = kb_accord && kb_accord_trk && ((0x54Au >> ((53u + k) % 12u)) & 1u) ? kb_accord_trk : song.sel;
+            kb_trk[k] = song.sel;
             if (kb_asleep) {                      /* (SCREEN OFF: the wake press is swallowed) */
                 kb_note[k] = KB_SILENT;
                 continue;
