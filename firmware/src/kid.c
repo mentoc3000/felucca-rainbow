@@ -22,7 +22,7 @@
  *               shrinks, grows, turns to ice
  *   PLAY        the beat: drums (track 4) and a bass line in key (track 2), the friend dances to it; SEQ: the next
  *               of eleven beats
- *   ARP         DRUMS: make a 16-step pattern with kick, clap and hi-hat
+ *   ARP         DRUMS: make a 16-step pattern with kick, clap and hi-hat; SEQ picks the kit
  *   REC         the next sky (rainbow, stars, hearts, bubbles, flowers, confetti, clouds, snow, leaves, desert), with
  *               confetti
  *   HOME        normal Rainbow play
@@ -354,10 +354,11 @@ static const uint16_t KID_RAINBOW[7] = {
 #define KID_INK RGB(52, 26, 58)          /* outlines (the pictures' too) */
 #define KID_WHITE RGB(255, 255, 255)
 
-/* 5 x 7 capitals, digits 1, 3, 5 and 8, '#', '!' and '-': a row a byte, bit 4 the left column */
+/* 5 x 7 capitals, digits and symbols: a row a byte, bit 4 the left column */
 #ifndef KID_ADV
 #define KID_ADV 6     /* a letter's step in the band's font: 5 px and a gap (8 in a Japanese build: 7 px kana, KID_KANA) */
 #endif
+enum { KID_GLYPH_ZERO = 64, KID_GLYPH_SIX };
 static const uint8_t KID_FONT[][7] = {
     {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}, {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E},   /* A B */
     {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E}, {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E},   /* C D */
@@ -394,12 +395,18 @@ static const uint8_t KID_FONT[][7] = {
     {0x0A, 0x00, 0x0E, 0x11, 0x1F, 0x11, 0x11}, {0x0A, 0x00, 0x0E, 0x11, 0x11, 0x11, 0x0E},   /* \x96 A diaeresis, \x97 O diaeresis */
     {0x04, 0x0A, 0x04, 0x0A, 0x11, 0x1F, 0x11}, {0x0F, 0x14, 0x14, 0x1F, 0x14, 0x14, 0x17},   /* \x98 A ring, \x99 AE */
     {0x01, 0x0E, 0x13, 0x15, 0x19, 0x0E, 0x10},                                               /* \x9A O slash */
+    [KID_GLYPH_ZERO] = {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E},
+    [KID_GLYPH_SIX] = {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E},
 };
 #define KID_GLYPH_N ((int32_t)(sizeof KID_FONT / sizeof KID_FONT[0]))
 static int32_t kid_glyph_of(char c)
 {
     if (c >= 'A' && c <= 'Z')
         return c - 'A';
+    if (c == '0')
+        return KID_GLYPH_ZERO;
+    if (c == '6')
+        return KID_GLYPH_SIX;
 #ifdef KID_KANA_N
     if ((uint8_t)c >= 0x80u && (uint8_t)c < 0x80u + KID_KANA_N)   /* (a Japanese build: its kana, KID_KANA) */
         return KID_GLYPH_N + ((uint8_t)c - 0x80);
@@ -546,19 +553,22 @@ static struct {
 #define KD_BPM_DEFAULT 120
 #define KD_SAVE_MS 4000u
 static const uint8_t KD_LANE[] = {DV_KICK, DV_CLAP, DV_HATC};
+/* Kit selection is saved as an index. Zero selects kit 80 for existing patterns. */
+static const uint8_t KD_KIT[] = {DK_80, DK_10, DK_66, DK_55, DK_77, DK_STD};
 static struct {
     uint16_t hit[NELEM(KD_LANE)];
     int16_t bpm, clock, prior_kit;
-    uint8_t row, rec, fx, dirty;
+    uint8_t row, kit, rec, fx, dirty;
     int8_t drawn_step;
     uint32_t edit_ms;
 } kd = {.bpm = KD_BPM_DEFAULT, .drawn_step = -1};
 
-/* Eight spare bytes after SLICE's favorites, before Rainbow's KEY byte. */
+/* The kit and the eight pattern bytes fit between SLICE's favorites and Rainbow's KEY. */
+#define KD_KIT_SETTING (favorites.factory[13][5])
 #define KD_SETTINGS (&favorites.factory[13][6])
 #define KD_FORMAT 0xD1u
 #if FELUCCA_SLICE
-_Static_assert(NELEM(SLICE_PRESETS) <= 48u, "SLICE favorites must fit before the DRUMS pattern");
+_Static_assert(NELEM(SLICE_PRESETS) <= 40u, "SLICE favorites must fit before the DRUMS pattern");
 #endif
 
 static void kd_load(void)
@@ -568,6 +578,7 @@ static void kd_load(void)
     if (data[0] != KD_FORMAT || data[1] < 60u || data[1] > 180u)
         return;
     kd.bpm = data[1];
+    kd.kit = KD_KIT_SETTING < NELEM(KD_KIT) ? KD_KIT_SETTING : 0u;
     for (row = 0; row < NELEM(KD_LANE); row++)
         kd.hit[row] = (uint16_t)(data[2u + 2u * row] | (uint16_t)data[3u + 2u * row] << 8);
 }
@@ -578,6 +589,7 @@ static void kd_save(void)
     uint32_t row;
     if (!kd.dirty)
         return;
+    KD_KIT_SETTING = kd.kit;
     data[0] = KD_FORMAT;
     data[1] = (uint8_t)kd.bpm;
     for (row = 0; row < NELEM(KD_LANE); row++) {
@@ -2112,7 +2124,7 @@ static void kd_enter(void)
         track_defaults_steps(&trk[row]);
     track_defaults(t);
     set_engine_of(t, ENGI_DRUM);
-    t->p[P_E0] = DK_80;
+    t->p[P_E0] = KD_KIT[kd.kit];
     t->p[P_LEVEL] = KID_BEATS[KB_DANCE].dlvl;
     t->p[P_SLEN] = KD_STEPS;
     t->p[P_SDIV] = 2;                              /* one sixteenth note per step */
@@ -2330,8 +2342,13 @@ static void kid_input(void)
                 kid_switch(KV_DRUMS);
             break;
         case B_SEQ:
-            if (kid.view == KV_DRUMS)
+            if (kid.view == KV_DRUMS) {
+                kd.kit = (uint8_t)((kd.kit + 1u) % NELEM(KD_KIT));
+                trk[3].p[P_E0] = KD_KIT[kd.kit];
+                kd_changed();
+                kid_hint(KH_BEAT);
                 break;
+            }
             if (kid.mode == KM_CHORDS && !KW_ON) {   /* CHORDS: the next lesson */
                 kid.c_lesson = (uint8_t)((kid.c_lesson + 1u) % KID_NLESSONS);
                 kid.c_pos = kid.c_ok = 0;
@@ -2626,8 +2643,8 @@ static void kid_leds(void)
     for (k = 0; k < KX_COUNT; k++)
         led_put(nl, panel.btn[KID_FX_BTN[k]], (kid.fx >> k) & 1u);
     led_put(nl, panel.btn[B_ARP], kid.view == KV_DRUMS);
-    led_put(nl, panel.btn[B_SEQ], (kid.mode == KM_FOLLOW || kid.mode == KM_CHORDS) && kid.view == KV_PLAY);   /* (SEQ picks the song or
-                                                  * the lesson there: lit, so it is easy to find; u/jrej) */
+    led_put(nl, panel.btn[B_SEQ], kid.view == KV_DRUMS ||
+            (kid.view == KV_PLAY && (kid.mode == KM_FOLLOW || kid.mode == KM_CHORDS)));  /* picks kit, song or lesson */
     led_put(nl, panel.btn[B_HOME], kid.view == KV_PLAY);
     led_put(nl, panel.btn[B_SAVE], KW_ON);        /* (WRITE: SAVE lit) */
     lit = kid_lit_mask(fm1_ms);
@@ -3043,8 +3060,14 @@ static uint32_t kid_band_setup(uint32_t now)
     int hint = kid.hint != KH_NONE && now - kid.hint_ms < 1500u;
     kf.meter = -1;
     kf.ol = 2;
-    if (kid.view == KV_DRUMS && !vol && !(hint && kid.hint == KH_SPEED))
+    if (kid.view == KV_DRUMS && !vol && !(hint && kid.hint == KH_SPEED)) {
+        if (hint && kid.hint == KH_BEAT) {
+            static char kit_name[8] = "KIT ";
+            str_cpy(kit_name + 4, N_DRUM_KIT[KD_KIT[kd.kit]], sizeof kit_name - 4);
+            return kid_band_word(kit_name, 5, RGB(80, 108, 190), 0xD010u + kd.kit);
+        }
         return kid_band_word("DRUMS", 5, RGB(80, 108, 190), 0xD001u);
+    }
     if (KW_ON && !(hint && (kid.hint == KH_SPEED || kid.hint == KH_NIGHT || kid.hint == KH_VOLUME || kid.hint == KH_LOOK || kid.hint == KH_HAT || kid.hint == KH_KEY))) {
         /* WRITE: the friend to write with, and a word */
         kf.band = KB_NAME;

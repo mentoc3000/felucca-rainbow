@@ -143,7 +143,7 @@ drums on 4), through Felucca's own sequencer.
 
 Press **ARP**. The first three black keys pick and play the kick, clap and hi-hat. The 16 white keys light up where the selected drum will hit. Tap a white key to add a hit, and tap it again to take it out. All three drums can hit on the same step.
 
-Press **PLAY** and watch the marker walk across the four groups of steps. You can add or remove hits while it goes. Turn **SELECT** to change the speed. Hold **REC** for two seconds to clear all three rows.
+Press **PLAY** and watch the marker walk across the four groups of steps. You can add or remove hits while it goes. Turn **SELECT** to change the speed. Press **SEQ** to change the kit. It starts on 80, then goes through 10, 66, 55, 77 and STD. The kit is saved with the pattern. Hold **REC** for two seconds to clear all three rows.
 
 **HOME**, **SAVE** and **ARP** each take you straight to a mode. The lit button shows where you are. Changing modes stops playback and saves edits. The drum pattern and WRITE song each stay on the FM-1 after power-off.
 

@@ -29,7 +29,7 @@ for another model.
 | Mod wheel | more wiggle |
 | FX, SCALE, CHORD, NOTE REPEAT, PARA, GLOBE | HICCUP, BACKWARDS, SLEEPY, SQUEAKY, GIANT, FREEZE |
 | ARP | DRUMS. The first three black keys from F3 pick kick, clap and hi-hat. The 16 pads or white keys from F3 to G5 add and remove hits. |
-| SEQ / SEQ PLAY / SEQ REC | next beat (or song or lesson) / start and stop playback / next sky. In WRITE, tap SEQ REC to clear one column, or hold for two seconds to clear the song. In DRUMS, hold SEQ REC for two seconds to clear the beat. |
+| SEQ / SEQ PLAY / SEQ REC | next beat (or song or lesson) / start and stop playback / next sky. In WRITE, tap SEQ REC to clear one column, or hold for two seconds to clear the song. In DRUMS, tap SEQ to change the kit or hold SEQ REC for two seconds to clear the beat. |
 | PATCH (HOME) | back to the friend or game |
 | BT (SAVE) | open the song in WRITE |
 | OCTAVE- / OCTAVE+ | bigger / smaller |

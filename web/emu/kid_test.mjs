@@ -807,6 +807,48 @@ async function checkDrumClear() {
 }
 await checkDrumClear();
 
+async function checkDrumKits() {
+  const device = await newDevice();
+  const { e, run, tap, key } = device;
+  const backingKit = e.web_rainbow_kit();
+  const kitName = () => String.fromCharCode(...Array.from({ length: 7 }, (_, i) => e.web_kid_txt(i)).filter(Boolean));
+
+  tap(B.ARP);
+  check("DRUMS starts on kit 80 and lights SEQ", e.web_rainbow_kit() === 4 && ((e.web_lit_buttons() >> B.SEQ) & 1));
+  key(0);
+  e.web_enc(EN.SELECT, 1); run(100);
+  tap(B.PLAY);
+  const kits = [[5, "10"], [6, "66"], [7, "55"], [8, "77"], [0, "STD"], [4, "80"]];
+  for (const [id, name] of kits) {
+    tap(B.SEQ);
+    check(`SEQ changes DRUMS to kit ${name} while the pattern plays`,
+          e.web_rainbow_kit() === id && kitName() === `KIT ${name}` &&
+          e.web_kid_drum_bpm() === 125 && (e.web_step(3, 0) >> 8) === 1 && e.web_playing());
+  }
+
+  tap(B.SEQ);
+  tap(B.HOME);
+  check("HOME restores the backing beat's kit", e.web_rainbow_kit() === backingKit);
+  tap(B.ARP);
+  check("DRUMS reopens with the selected kit", e.web_rainbow_kit() === 5);
+
+  const reboot = await newDevice(device.image());
+  reboot.tap(B.ARP);
+  check("the drum kit saves alongside the pattern and speed",
+        reboot.e.web_rainbow_kit() === 5 && reboot.e.web_kid_drum_bpm() === 125 &&
+        (reboot.e.web_step(3, 0) >> 8) === 1);
+
+  if (process.env.RAINBOW_PRE_KIT_WASM) {
+    const old = await newDevice(undefined, fs.readFileSync(process.env.RAINBOW_PRE_KIT_WASM));
+    old.tap(B.ARP); old.key(26); old.tap(B.HOME);
+    const upgraded = await newDevice(old.image());
+    upgraded.tap(B.ARP);
+    check("an older saved pattern opens with kit 80", upgraded.e.web_rainbow_kit() === 4 &&
+          (upgraded.e.web_step(3, 15) >> 8) === 1);
+  }
+}
+await checkDrumKits();
+
 async function checkDrumRestore() {
   const { e, run, tap } = await newDevice();
   const drumBand = () => new Uint16Array(e.memory.buffer, e.web_screen(), 240 * 240).slice(184 * 240).join(",");
