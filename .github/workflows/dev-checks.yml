@@ -10,6 +10,7 @@ permissions:
 
 env:
   EMSDK_VERSION: 3.1.74
+  CC: clang
 
 jobs:
   checks:
@@ -39,18 +40,18 @@ jobs:
       - name: Host UI and FM-1 flash chips
         run: |
           mkdir -p build/host
-          cc -w -Ibuild/gen -Ifirmware/src -o build/host/ui_test tests/ui_test.c -lm
+          "$CC" -O1 -w -Ibuild/gen -Ifirmware/src -o build/host/ui_test tests/ui_test.c -lm
           build/host/ui_test
-          cc -Ifirmware/hal -o build/host/flash_id_test tests/flash_id_test.c
+          "$CC" -Ifirmware/hal -o build/host/flash_id_test tests/flash_id_test.c
           build/host/flash_id_test
 
       - name: Editor protocol and backup on the host and in Node
         run: |
-          cc -w -Ibuild/gen -Ifirmware/src -o build/host/editor_test tests/editor_test.c -lm
+          "$CC" -O1 -w -Ibuild/gen -Ifirmware/src -o build/host/editor_test tests/editor_test.c -lm
           MENU_JSON=build/host/menu.json build/host/editor_test
-          cc -w -Ibuild/gen -Ifirmware/src -o build/host/descdump tests/descdump.c -lm
+          "$CC" -O1 -w -Ibuild/gen -Ifirmware/src -o build/host/descdump tests/descdump.c -lm
           build/host/descdump > build/host/desc.json
-          cc -w -Ibuild/gen -Ifirmware/src -o build/host/backup_test tests/backup_test.c -lm
+          "$CC" -O1 -w -Ibuild/gen -Ifirmware/src -o build/host/backup_test tests/backup_test.c -lm
           build/host/backup_test
           node web/test_web.mjs
           node web/test_backup.mjs
@@ -77,7 +78,7 @@ jobs:
 
       - name: Test WebAssembly, native audio and Rainbow mode
         run: |
-          cc -O2 -ffp-contract=off -w -Ibuild/gen -Ifirmware/src -o build/host/emu_native web/emu/native_check.c -lm
+          "$CC" -O2 -ffp-contract=off -w -Ibuild/gen -Ifirmware/src -o build/host/emu_native web/emu/native_check.c -lm
           build/host/emu_native build/host/emu_native.f32
           node web/emu/emu_test.mjs build/emu/felucca.wasm build/host/emu_native.f32
           node web/emu/kid_test.mjs build/emu/felucca.wasm
