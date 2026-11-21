@@ -52,7 +52,7 @@ WORDS = {
     "STAFF OFF": "ごせんふ なし", "KEY": "キー", "LOOK-ALIKES ON": "そっくり あり", "LOOK-ALIKES OFF": "そっくり なし",
     "HI!": "こんにちは", "HI": "やあ", "YOUR NAME": "おなまえ", "PRESETS  LETTER": "PRESETS  もじ",
     "ALGORITHM  NEXT": "ALGORITHM  つぎ", "SAVE  KEEP IT": "SAVE  きめる", "HOME  LEAVE IT": "HOME  やめる",
-    "SPARKLE": "キラキラ", "SPARKLE TUNE": "キラキラ メロディー", "SPARKLE ALL": "キラキラ ぜんぶ", "WRITE": "さっきょく",
+    "DRUMS": "ドラム", "WRITE": "さっきょく",
     "DO RE MI": "ドレミ",
     # chords and lessons
     "MAJOR": "メジャー", "MINOR": "マイナー", "SEVEN": "セブンス", "NINE": "ナインス",

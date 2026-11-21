@@ -53,6 +53,8 @@ static int kid_smk_input(uint32_t pressed)
         kid_smk_lr = 1;
     else if (((pressed >> SMK_BTN_LEFT) & 1u) && smk_btn_free(SMK_BTN_LEFT))
         kid_smk_lr = -1;
+    if (kid.view == KV_DRUMS)
+        return kid_smk_lr != 0;
     if (((pressed >> SMK_BTN_FADER_BANK) & 1u) && smk_btn_free(SMK_BTN_FADER_BANK) && !KW_ON) {   /* the next sky */
         any = 1;
         kid.scene = (uint8_t)((kid.scene + 1u) % KS_COUNT);
@@ -121,7 +123,7 @@ static void kid_smk_leds(void)
     uint32_t k, c, lit = kid_lit_mask(fm1_ms);
     for (k = 0; k < KX_COUNT; k++)
         led_put(nl, panel.btn[KID_FX_BTN[k]], (kid.fx >> k) & 1u);
-    led_put(nl, panel.btn[B_ARP], kid.arp && !KW_ON);
+    led_put(nl, panel.btn[B_ARP], kid.view == KV_DRUMS);
     led_put(nl, panel.btn[B_HOME], kid.view == KV_PLAY);
     led_put(nl, panel.btn[B_SAVE], KW_ON);        /* (WRITE: SAVE lit) */
     led_put(nl, panel.btn[B_PLAY], song.playing);
@@ -131,7 +133,7 @@ static void kid_smk_leds(void)
         return;
     for (c = 0; c < SMK_NPAD; c++) {
         uint32_t key = SMK_WHITE_NOTE[c], col = KID_NOTE_COL[(53u + key) % 12u];
-        uint32_t lv = ((fm1_in.notes | lit) >> key) & 1u ? 160u : 12u;
+        uint32_t lv = ((lit | (kid.view == KV_DRUMS ? 0u : fm1_in.notes)) >> key) & 1u ? 160u : 12u;
         uint32_t r = (col >> 11) << 3, g = ((col >> 5) & 0x3Fu) << 2, b = (col & 0x1Fu) << 3;
         padled_set(SMK_PAD_OF_WHITE(c), (uint8_t)(r * lv >> 8), (uint8_t)(g * lv >> 8), (uint8_t)(b * lv >> 8));
     }

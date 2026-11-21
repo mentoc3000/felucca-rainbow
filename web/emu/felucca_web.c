@@ -488,6 +488,11 @@ EXPORT uint32_t web_playing(void) { return song.playing; }
 EXPORT int32_t web_lim_t(void) { return lim_t; }
 EXPORT uint32_t web_kid_view(void) { return (uint32_t)kid.view; }
 EXPORT uint32_t web_kid_active(void) { return KID_ON(); }
+EXPORT uint32_t web_kid_drum_row(void) { return kd.row; }
+EXPORT uint32_t web_kid_drum_bpm(void) { return (uint32_t)kd.bpm; }
+EXPORT uint32_t web_rainbow_bpm(void) { return (uint32_t)song.g[G_BPM]; }
+EXPORT uint32_t web_rainbow_kit(void) { return (uint32_t)trk[3].p[P_E0]; }
+EXPORT uint32_t web_kid_lesson(void) { return kid.c_lesson; }
 EXPORT uint32_t web_kid_guess(void) { return kid.g_target; }
 EXPORT uint32_t web_kid_copy_len(void) { return kid.m_len; }                      /* (kid_test.mjs: COPY ME's pattern) */
 EXPORT uint32_t web_kid_copy_key(uint32_t i) { return kid.m_seq[i & 7u]; }

@@ -83,8 +83,6 @@ enum { QN_OFF, QN_SNAP, QN_WHITE, QN_SEQ };      /* P_QUANT */
  * chord's notes upward from C3, so a hand drawn across them strums it. Read in the audio ISR, set by the main loop */
 static volatile uint8_t kb_strum;                 /* on */
 static volatile uint8_t kb_accord;                /* ACCORDION (kid.c): a black key plays its chord (seq.c key_on), F3 .. E4 */
-static volatile uint8_t kb_accord_trk;            /* .. and on this track, 0 the key's own (kid.c: the tune's arp leaves the
-                                                   * chords alone) */
 static volatile uint8_t kb_strum_root, kb_strum_minor;   /* the chord picked (a pitch class, C major to begin with) */
 /* Rainbow mode's sub octave (kid.c kid_sub): a key also plays, quietly, an octave under its lowest note on track 3
  * (KB_SUB_TRK), so the small speaker and children's headphones get some warmth under the friend */
@@ -746,7 +744,7 @@ static void keyboard_block(void)
         if (!((ch >> k) & 1u))
             continue;
         if ((cur >> k) & 1u) {                    /* the selected track; the key-up goes to the same one */
-            kb_trk[k] = kb_accord && kb_accord_trk && ((0x54Au >> ((53u + k) % 12u)) & 1u) ? kb_accord_trk : song.sel;
+            kb_trk[k] = song.sel;
             if (kb_asleep) {                      /* (SCREEN OFF: the wake press is swallowed) */
                 kb_note[k] = KB_SILENT;
                 continue;
