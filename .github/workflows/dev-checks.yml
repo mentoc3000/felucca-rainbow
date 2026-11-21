@@ -1,0 +1,88 @@
+name: dev checks
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  EMSDK_VERSION: 3.1.74
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Python packages
+        run: python3 -m pip install Pillow fonttools playwright
+
+      - name: Generated headers
+        run: python3 -c 'import sys; sys.path.insert(0, "tools"); import build; build.generate()'
+
+      - name: Host UI and FM-1 flash chips
+        run: |
+          mkdir -p build/host
+          cc -w -Ibuild/gen -Ifirmware/src -o build/host/ui_test tests/ui_test.c -lm
+          build/host/ui_test
+          cc -Ifirmware/hal -o build/host/flash_id_test tests/flash_id_test.c
+          build/host/flash_id_test
+
+      - name: Editor protocol and backup on the host and in Node
+        run: |
+          cc -w -Ibuild/gen -Ifirmware/src -o build/host/editor_test tests/editor_test.c -lm
+          MENU_JSON=build/host/menu.json build/host/editor_test
+          cc -w -Ibuild/gen -Ifirmware/src -o build/host/descdump tests/descdump.c -lm
+          build/host/descdump > build/host/desc.json
+          cc -w -Ibuild/gen -Ifirmware/src -o build/host/backup_test tests/backup_test.c -lm
+          build/host/backup_test
+          node web/test_web.mjs
+          node web/test_backup.mjs
+
+      - name: Restore Emscripten
+        id: emcache
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-dev-checks-${{ env.EMSDK_VERSION }}-v1
+
+      - name: Install Emscripten
+        if: steps.emcache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          "$HOME/emsdk/emsdk" install "$EMSDK_VERSION"
+
+      - name: Build the browser version
+        run: |
+          "$HOME/emsdk/emsdk" activate "$EMSDK_VERSION" >/dev/null
+          # shellcheck source=/dev/null
+          . "$HOME/emsdk/emsdk_env.sh" >/dev/null
+          EMU_PREVIEW=0 sh web/emu/build.sh
+
+      - name: Test WebAssembly, native audio and Rainbow mode
+        run: |
+          cc -O2 -ffp-contract=off -w -Ibuild/gen -Ifirmware/src -o build/host/emu_native web/emu/native_check.c -lm
+          build/host/emu_native build/host/emu_native.f32
+          node web/emu/emu_test.mjs build/emu/felucca.wasm build/host/emu_native.f32
+          node web/emu/kid_test.mjs build/emu/felucca.wasm
+
+      - name: Install Chromium
+        run: python3 -m playwright install --with-deps --only-shell chromium
+
+      - name: Browser saves and the installer's name box in Chromium
+        run: |
+          python3 web/emu/browser_save_test.py build/emu
+          python3 web/test_name_page.py web build/name.png

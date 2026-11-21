@@ -130,6 +130,11 @@ cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). After an intended ch
 the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites the hashes; `BUDGET_UPDATE=1`
 does the same for the cost files.
 
+The fork's `dev checks` workflow runs on pushes to `dev` and on pull requests. It checks the host UI,
+flash chip IDs, the editor and backups, the browser build against native audio, and Rainbow mode.
+Chromium checks browser saves and the installer's name box. These checks run without the JieLi SDK
+or an FM-1. The `rainbow` workflow builds the firmware packages and publishes Pages.
+
 ## Install
 
 Open the [Rainbow mode installer](https://joshbartlettband-web.github.io/felucca-rainbow/webapp/installer/)
