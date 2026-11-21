@@ -490,6 +490,8 @@ EXPORT uint32_t web_kid_view(void) { return (uint32_t)kid.view; }
 EXPORT uint32_t web_synth_home(void) { return ui.home && !ui.menu; }
 EXPORT uint32_t web_kid_active(void) { return KID_ON(); }
 EXPORT uint32_t web_kid_drum_row(void) { return kd.row; }
+EXPORT uint32_t web_rainbow_drum_level(uint32_t row) { return (uint32_t)trk[3].p[P_LN0 + KD_LANE[row % NELEM(KD_LANE)]]; }
+EXPORT uint32_t web_rainbow_drum_swing(void) { return (uint32_t)trk[3].p[P_SSWING]; }
 EXPORT uint32_t web_kid_drum_bpm(void) { return (uint32_t)kd.bpm; }
 EXPORT uint32_t web_rainbow_bpm(void) { return (uint32_t)song.g[G_BPM]; }
 EXPORT uint32_t web_rainbow_step_index(uint32_t track) { return trk[track % NTRK].seq_idx; }

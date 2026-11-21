@@ -849,6 +849,54 @@ async function checkDrumKits() {
 }
 await checkDrumKits();
 
+async function checkDrumKnobs() {
+  const device = await newDevice();
+  const { e, run, tap, key } = device;
+  const mix = (fw) => [0, 1, 2].map(row => fw.web_rainbow_drum_level(row));
+  const turn = (knob, count) => { e.web_enc(knob, count); run(70); };
+  const pixel = (x, y) => new Uint16Array(e.memory.buffer, e.web_screen(), 240 * 240)[y * 240 + x];
+
+  const backingMix = mix(e);
+  const backingSwing = e.web_rainbow_drum_swing();
+  tap(B.ARP);
+  check("DRUMS defaults to full levels and straight timing", mix(e).every(v => v === 127) && e.web_rainbow_drum_swing() === 0);
+  key(0);
+  tap(B.PLAY);
+  const fullDot = pixel(32, 79);
+  turn(EN.K1, -1);
+  check("knob 1 lowers just the kick and updates its dots", mix(e).join() === "102,127,127" && pixel(32, 79) !== fullDot);
+  turn(EN.K2, -2);
+  turn(EN.K3, -3);
+  check("knobs 2 and 3 adjust clap and hi-hat independently", mix(e).join() === "102,74,0");
+  turn(EN.K4, 1);
+  check("knob 4 adds swing to the playing drum track", e.web_rainbow_drum_swing() === 30 && e.web_playing());
+  turn(EN.K4, 7);
+  check("knob 4 clamps at the third swing setting", e.web_rainbow_drum_swing() === 60);
+  turn(EN.K4, -7);
+  check("turning knob 4 left restores straight timing", e.web_rainbow_drum_swing() === 0);
+  turn(EN.K4, 2);
+  check("the mix keeps the same tempo and hits", e.web_kid_drum_bpm() === 120 && (e.web_step(3, 0) >> 8) === 1);
+  tap(B.HOME);
+  check("HOME restores the backing beat's levels and swing",
+        mix(e).join() === backingMix.join() && e.web_rainbow_drum_swing() === backingSwing);
+
+  const reboot = await newDevice(device.image());
+  reboot.tap(B.ARP);
+  check("the drum levels and swing save with the pattern", mix(reboot.e).join() === "102,74,0" &&
+        reboot.e.web_rainbow_drum_swing() === 60 && (reboot.e.web_step(3, 0) >> 8) === 1);
+
+  if (process.env.RAINBOW_PRE_MIX_WASM) {
+    const old = await newDevice(undefined, fs.readFileSync(process.env.RAINBOW_PRE_MIX_WASM));
+    old.tap(B.ARP); old.key(26); old.tap(B.SEQ); old.tap(B.HOME);
+    const upgraded = await newDevice(old.image());
+    upgraded.tap(B.ARP);
+    check("old drum patterns retain their kit with full levels and straight timing",
+          upgraded.e.web_rainbow_kit() === 5 && (upgraded.e.web_step(3, 15) >> 8) === 1 &&
+          mix(upgraded.e).every(v => v === 127) && upgraded.e.web_rainbow_drum_swing() === 0);
+  }
+}
+await checkDrumKnobs();
+
 async function checkDrumRestore() {
   const { e, run, tap } = await newDevice();
   const drumBand = () => new Uint16Array(e.memory.buffer, e.web_screen(), 240 * 240).slice(184 * 240).join(",");

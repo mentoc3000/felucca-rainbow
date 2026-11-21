@@ -430,7 +430,7 @@ static const int8_t KID_SIN[32] = {0, 25, 49, 71, 90, 106, 117, 125, 127, 125, 1
                                    0, -25, -49, -71, -90, -106, -117, -125, -127, -125, -117, -106, -90, -71, -49, -25};
 
 enum { KH_NONE, KH_SIZE, KH_NIGHT, KH_ECHO, KH_WIGGLE, KH_SPEED, KH_CHORD, KH_BEAT, KH_VOLUME, KH_NEWSONG, KH_SONG,
-       KH_LOOK, KH_HAT, KH_STARS, KH_NEWHAT, KH_NEWFRIEND, KH_NEWSKY, KH_NOTES, KH_STAFF, KH_KEY };
+       KH_LOOK, KH_HAT, KH_STARS, KH_NEWHAT, KH_NEWFRIEND, KH_NEWSKY, KH_NOTES, KH_STAFF, KH_KEY, KH_DRUM_SWING };
 enum { KB_NAME, KB_NOTE, KB_HINT, KB_CHORD };
 /* ALGORITHM: how the keys play (kid_mode_set). CHOIR: three friends sing a chord; STRUM: an Omnichord (seq.c
  * kb_strum_map); GUESS: an ear game; FOLLOW: songs to learn, the next key lit */
@@ -552,41 +552,55 @@ static struct {
 #define KD_STEPS 16u
 #define KD_BPM_DEFAULT 120
 #define KD_SAVE_MS 4000u
+#define KD_LEVEL_MAX 3
 static const uint8_t KD_LANE[] = {DV_KICK, DV_CLAP, DV_HATC};
+static const uint8_t KD_GAIN[] = {0, 74, 102, 127};
+static const struct {
+    uint8_t amount;
+    const char *name;
+} KD_SWING[] = {{0, "STRAIGHT"}, {30, "SWING"}, {60, "BOUNCY"}};
 /* Kit selection is saved as an index. Zero selects kit 80 for existing patterns. */
 static const uint8_t KD_KIT[] = {DK_80, DK_10, DK_66, DK_55, DK_77, DK_STD};
 static struct {
     uint16_t hit[NELEM(KD_LANE)];
-    int16_t bpm, clock, prior_kit;
-    uint8_t row, kit, rec, fx, dirty;
+    int16_t bpm, clock, prior_kit, prior_swing;
+    int16_t prior_gain[NELEM(KD_LANE)];
+    uint8_t level[NELEM(KD_LANE)];
+    uint8_t row, kit, swing, rec, fx, dirty;
     int8_t drawn_step;
     uint32_t edit_ms;
-} kd = {.bpm = KD_BPM_DEFAULT, .drawn_step = -1};
+} kd = {.bpm = KD_BPM_DEFAULT, .level = {KD_LEVEL_MAX, KD_LEVEL_MAX, KD_LEVEL_MAX}, .drawn_step = -1};
 
-/* The kit and the eight pattern bytes fit between SLICE's favorites and Rainbow's KEY. */
+/* DRUMS uses ten bytes between SLICE's favorites and Rainbow's KEY.
+ * The mix byte has two bits per row (amount turned down) and two for swing.
+ * Zero is full volume and straight timing, including in older patterns. */
+#define KD_MIX_SETTING (favorites.factory[13][4])
 #define KD_KIT_SETTING (favorites.factory[13][5])
 #define KD_SETTINGS (&favorites.factory[13][6])
 #define KD_FORMAT 0xD1u
 #if FELUCCA_SLICE
-_Static_assert(NELEM(SLICE_PRESETS) <= 40u, "SLICE favorites must fit before the DRUMS pattern");
+_Static_assert(NELEM(SLICE_PRESETS) <= 32u, "SLICE favorites must fit before the DRUMS pattern");
 #endif
 
 static void kd_load(void)
 {
     const uint8_t *data = KD_SETTINGS;
-    uint32_t row;
+    uint32_t row, mix = KD_MIX_SETTING, swing = mix >> 6;
     if (data[0] != KD_FORMAT || data[1] < 60u || data[1] > 180u)
         return;
     kd.bpm = data[1];
     kd.kit = KD_KIT_SETTING < NELEM(KD_KIT) ? KD_KIT_SETTING : 0u;
-    for (row = 0; row < NELEM(KD_LANE); row++)
+    kd.swing = swing < NELEM(KD_SWING) ? (uint8_t)swing : 0u;
+    for (row = 0; row < NELEM(KD_LANE); row++) {
+        kd.level[row] = (uint8_t)(KD_LEVEL_MAX - ((mix >> (2u * row)) & 3u));
         kd.hit[row] = (uint16_t)(data[2u + 2u * row] | (uint16_t)data[3u + 2u * row] << 8);
+    }
 }
 
 static void kd_save(void)
 {
     uint8_t *data = KD_SETTINGS;
-    uint32_t row;
+    uint32_t row, mix = (uint32_t)kd.swing << 6;
     if (!kd.dirty)
         return;
     KD_KIT_SETTING = kd.kit;
@@ -595,7 +609,9 @@ static void kd_save(void)
     for (row = 0; row < NELEM(KD_LANE); row++) {
         data[2u + 2u * row] = (uint8_t)kd.hit[row];
         data[3u + 2u * row] = (uint8_t)(kd.hit[row] >> 8);
+        mix |= (uint32_t)(KD_LEVEL_MAX - kd.level[row]) << (2u * row);
     }
+    KD_MIX_SETTING = (uint8_t)mix;
     kd.dirty = 0;
     settings_save();
 }
@@ -2111,6 +2127,9 @@ static void kd_enter(void)
     kd.clock = song.g[G_CLOCK];
     kd.rec = song.rec;
     kd.prior_kit = drum_track(t) ? t->p[P_E0] : DK_STD;
+    kd.prior_swing = t->p[P_SSWING];
+    for (row = 0; row < NELEM(KD_LANE); row++)
+        kd.prior_gain[row] = t->p[P_LN0 + KD_LANE[row]];
     kd.fx = kid.fx;
     song.g[G_CLOCK] = 0;
     song.rec = 0;
@@ -2128,18 +2147,26 @@ static void kd_enter(void)
     t->p[P_LEVEL] = KID_BEATS[KB_DANCE].dlvl;
     t->p[P_SLEN] = KD_STEPS;
     t->p[P_SDIV] = 2;                              /* one sixteenth note per step */
-    for (row = 0; row < NELEM(KD_LANE); row++)
+    t->p[P_SSWING] = KD_SWING[kd.swing].amount;
+    for (row = 0; row < NELEM(KD_LANE); row++) {
+        t->p[P_LN0 + KD_LANE[row]] = KD_GAIN[kd.level[row]];
         for (step = 0; step < KD_STEPS; step++)
             if (kd.hit[row] & (1u << step))
                 grid_hit(t, step, KD_LANE[row], 1);
+    }
 }
 
 static void kd_leave(void)
 {
+    track_t *t = &trk[3];
+    uint32_t row;
     kd_save();
     song.g[G_CLOCK] = kd.clock;
     song.rec = kd.rec;
-    trk[3].p[P_E0] = kd.prior_kit;
+    t->p[P_E0] = kd.prior_kit;
+    t->p[P_SSWING] = kd.prior_swing;
+    for (row = 0; row < NELEM(KD_LANE); row++)
+        t->p[P_LN0 + KD_LANE[row]] = kd.prior_gain[row];
     song.grid = 0;
     kid_fx_set(kd.fx);
     if (kid.fx & (1u << KX_SLEEPY))
@@ -2174,6 +2201,26 @@ static void kd_keys(uint32_t notes)
         kd_changed();
         kid.full = 1;
     }
+}
+
+static void kd_knob(uint32_t knob, int32_t turn)
+{
+    if (knob < NELEM(KD_LANE)) {
+        uint8_t level = (uint8_t)clamp(kd.level[knob] + turn, 0, KD_LEVEL_MAX);
+        if (level == kd.level[knob])
+            return;
+        kd.level[knob] = level;
+        trk[3].p[P_LN0 + KD_LANE[knob]] = KD_GAIN[level];
+        kid.full = 1;
+    } else {
+        uint8_t swing = (uint8_t)clamp(kd.swing + turn, 0, NELEM(KD_SWING) - 1u);
+        kid_hint(KH_DRUM_SWING);
+        if (swing == kd.swing)
+            return;
+        kd.swing = swing;
+        trk[3].p[P_SSWING] = KD_SWING[swing].amount;
+    }
+    kd_changed();
 }
 
 static void kd_clear(void)
@@ -2572,7 +2619,10 @@ static void kid_input(void)
         kid_hint(KH_STAFF);
     } else
 #endif
-    if (s != 0 && kid.view == KV_PLAY) {                      /* two detents an octave: a small hand turns a lot */
+    if (s != 0 && kid.view == KV_DRUMS && !kid.vol_open) {
+        any = 1u;
+        kd_knob(0, s);
+    } else if (s != 0 && kid.view == KV_PLAY) {                      /* two detents an octave: a small hand turns a lot */
         any = 1u;
         kid.acc = (int8_t)clamp(kid.acc + s, -2, 2);
         if (kid.acc >= 2 || kid.acc <= -2) {
@@ -2591,7 +2641,10 @@ static void kid_input(void)
         kid_hint(KH_NOTES);
     } else
 #endif
-    if (s != 0 && kid.view != KV_DRUMS) {
+    if (s != 0 && kid.view == KV_DRUMS && !kid.vol_open) {
+        any = 1u;
+        kd_knob(1, s);
+    } else if (s != 0 && kid.view != KV_DRUMS) {
         any = 1u;
         uint32_t n = (uint32_t)clamp(kid.night + s, 0, 8);
         if (n != kid.night) {
@@ -2608,7 +2661,10 @@ static void kid_input(void)
         kid_hint(KH_STARS);
     } else
 #endif
-    if (s != 0 && kid.view == KV_PLAY) {
+    if (s != 0 && kid.view == KV_DRUMS && !kid.vol_open) {
+        any = 1u;
+        kd_knob(2, s);
+    } else if (s != 0 && kid.view == KV_PLAY) {
         any = 1u;
         kid.echo = (uint8_t)clamp(kid.echo + s, 0, 8);
         kid_knobs();
@@ -2621,7 +2677,10 @@ static void kid_input(void)
         kid_hat_step(s);
     } else
 #endif
-    if (s != 0 && kid.view == KV_PLAY) {
+    if (s != 0 && kid.view == KV_DRUMS && !kid.vol_open) {
+        any = 1u;
+        kd_knob(3, s);
+    } else if (s != 0 && kid.view == KV_PLAY) {
         any = 1u;
         kid.wiggle = (uint8_t)clamp(kid.wiggle + s, 0, 8);
         kid_knobs();
@@ -3066,6 +3125,8 @@ static uint32_t kid_band_setup(uint32_t now)
             str_cpy(kit_name + 4, N_DRUM_KIT[KD_KIT[kd.kit]], sizeof kit_name - 4);
             return kid_band_word(kit_name, 5, RGB(80, 108, 190), 0xD010u + kd.kit);
         }
+        if (hint && kid.hint == KH_DRUM_SWING)
+            return kid_band_word(KD_SWING[kd.swing].name, 5, RGB(80, 108, 190), 0xD020u + kd.swing);
         return kid_band_word("DRUMS", 5, RGB(80, 108, 190), 0xD001u);
     }
     if (KW_ON && !(hint && (kid.hint == KH_SPEED || kid.hint == KH_NIGHT || kid.hint == KH_VOLUME || kid.hint == KH_LOOK || kid.hint == KH_HAT || kid.hint == KH_KEY))) {
@@ -3116,7 +3177,7 @@ static uint32_t kid_band_setup(uint32_t now)
         sig = 0x400u | kid.fxk;
     } else if (kid.hint != KH_NONE && now - kid.hint_ms < 1500u) {
         static const char *const WORD[] = {"", "", "DAY", "ECHO", "WIGGLE", "", "", "", "VOLUME", "", "", "", "", "STARS",
-                                           "NEW HAT!", "NEW FRIEND!", "NEW SKY!", "", "", ""};
+                                           "NEW HAT!", "NEW FRIEND!", "NEW SKY!", "", "", "", ""};
         static char key_word[16];
         int32_t v = 0;
         kf.band = KB_HINT;
@@ -4182,7 +4243,7 @@ static uint16_t kd_px(int32_t x, int32_t y)
         if (y >= 34 && y < 169 && x >= mid - 5 && x <= mid + 5)
             paper = RGB(214, 222, 245);
     }
-    if (y >= KD_ROW_Y - 14 && y < KD_ROW_Y + 2 * KD_ROW_H + 15) {
+    if (y >= KD_ROW_Y - 14 && y < KD_ROW_Y + 2 * KD_ROW_H + 21) {
         uint32_t row = (uint32_t)(y - (KD_ROW_Y - 14)) / KD_ROW_H;
         int32_t dy = y - (KD_ROW_Y + (int32_t)row * KD_ROW_H);
         uint16_t ink = KID_RAINBOW[row * 2u];
@@ -4190,6 +4251,12 @@ static uint16_t kd_px(int32_t x, int32_t y)
             if (kd_icon(row, x - 22, dy))
                 return row == kd.row ? KID_WHITE : KID_INK;
             return row == kd.row ? kid_mix(ink, KID_INK, 75u) : RGB(231, 226, 243);
+        }
+        if (x >= 10 && x < 10 + 10 * KD_LEVEL_MAX && dy >= 16 && dy <= 20) {
+            uint32_t dot = (uint32_t)(x - 10) / 10u;
+            int32_t dx = (x - 10) % 10 - 2, dot_y = dy - 18;
+            if (dx * dx + dot_y * dot_y <= 4)
+                return dot < kd.level[row] ? kid_mix(ink, KID_INK, 45u) : RGB(219, 211, 231);
         }
         if (x >= KD_X0 && x < kd_cell_x(KD_STEPS) - KD_GAP && dy >= -5 && dy <= 5) {
             int32_t rel = x - KD_X0, beat = rel / (4 * KD_CELL + KD_GAP);

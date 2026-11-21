@@ -24,7 +24,7 @@ for another model.
 | 16 pads | the white keys F3..G5 (low notes on the bottom row), in their note colours; bright while held or while FOLLOW, GUESS or CHORDS light the key |
 | K1 | volume (never above the grown-ups' VOLUME) |
 | K2 / K3 / K4 | beat speed / how the keys play / next friend |
-| K5..K8 and faders 1..4 | BIG/SMALL, DAY/NIGHT, ECHO, WIGGLE (a fader takes over once it moves) |
+| K5..K8 and faders 1..4 | BIG/SMALL, DAY/NIGHT, ECHO, WIGGLE (a fader takes over once it moves). In DRUMS, turn K5..K7 for kick, clap and hi-hat levels, and K8 for swing. |
 | Pitch wheel | a slide, up to 2 semitones |
 | Mod wheel | more wiggle |
 | FX, SCALE, CHORD, NOTE REPEAT, PARA, GLOBE | HICCUP, BACKWARDS, SLEEPY, SQUEAKY, GIANT, FREEZE |
