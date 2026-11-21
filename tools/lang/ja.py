@@ -48,6 +48,7 @@ WORDS = {
     # games, secrets, the grown-ups' settings
     "YES!": "せいかい!", "TRY AGAIN": "もういちど", "LISTEN": "きいてね", "YOUR TURN": "どうぞ", "YAY!": "やったー!",
     "STAR!": "ほし!", "NEW HAT!": "あたらしい ぼうし!", "NEW FRIEND!": "あたらしい ともだち!", "NEW SKY!": "あたらしい そら!",
+    "REC UNDO": "REC でもどす", "UNDONE": "もどした",
     "NEW SONG": "あたらしい うた", "NO HAT": "ぼうし なし", "STARS": "ほし", "STAFF ON": "ごせんふ あり",
     "STAFF OFF": "ごせんふ なし", "KEY": "キー", "LOOK-ALIKES ON": "そっくり あり", "LOOK-ALIKES OFF": "そっくり なし",
     "HI!": "こんにちは", "HI": "やあ", "YOUR NAME": "おなまえ", "PRESETS  LETTER": "PRESETS  もじ",

@@ -423,7 +423,7 @@ static const int8_t KID_SIN[32] = {0, 25, 49, 71, 90, 106, 117, 125, 127, 125, 1
                                    0, -25, -49, -71, -90, -106, -117, -125, -127, -125, -117, -106, -90, -71, -49, -25};
 
 enum { KH_NONE, KH_SIZE, KH_NIGHT, KH_ECHO, KH_WIGGLE, KH_SPEED, KH_CHORD, KH_SPARKLE, KH_BEAT, KH_VOLUME, KH_NEWSONG, KH_SONG,
-       KH_LOOK, KH_HAT, KH_STARS, KH_NEWHAT, KH_NEWFRIEND, KH_NEWSKY, KH_NOTES, KH_STAFF, KH_KEY };
+       KH_LOOK, KH_HAT, KH_STARS, KH_NEWHAT, KH_NEWFRIEND, KH_NEWSKY, KH_NOTES, KH_STAFF, KH_KEY, KH_UNDONE };
 enum { KB_NAME, KB_NOTE, KB_HINT, KB_CHORD };
 /* ALGORITHM: how the keys play (kid_mode_set). CHOIR: three friends sing a chord; STRUM: an Omnichord (seq.c
  * kb_strum_map); GUESS: an ear game; FOLLOW: songs to learn, the next key lit */
@@ -524,6 +524,7 @@ static struct {
 #define KW_COLS 32u
 #define KW_PAGE 8u
 #define KW_SAVE_MS 4000u                /* saved this long after the last change (while stopped), and on leaving */
+#define KW_UNDO_HINT_MS 4000u           /* how long REC UNDO shows after a clear */
 static struct {
     uint8_t on, cur, stamp, adv, dirty, beat, loaded, clear_on;
     uint8_t floor;                      /* the loop is at least this many columns (a new song played empty: two bars, to play into) */
@@ -534,6 +535,10 @@ static struct {
     int16_t col, hx, hy;                /* the playing column drawn last (-1 none); where the hopping friend was */
     uint8_t hop_fr;                     /* the friend hopping along (the playing column's) */
 } kw = {.col = -1};
+static struct {
+    uint8_t note[KW_COLS][2];
+    uint8_t cur, floor, valid;
+} kw_undo;                            /* one clear, until the notes or the band change */
 
 /* the picture and name friend fr shows: a look-alike's stand-in (KID_ALT: an original friend with the same sound, sky and
  * beat) while the grown-ups' LOOK-ALIKES is off, else its own */
@@ -1388,6 +1393,7 @@ static void kw_stamp(uint32_t fr)
         for (best = 0, s = 1; s < 3u; s++)
             if (use[s] < use[best])
                 best = s;
+    kw_undo.valid = 0;
     kw.band[best] = (uint8_t)fr;
     kw_track_sound(best);
     kw.stamp = (uint8_t)best;
@@ -1436,6 +1442,7 @@ static void kw_leave(void)
     kw_save();
     kw.on = 0;
     kw.floor = 0;
+    kw.clear_on = kw_undo.valid = 0;
     kb_strum = kid.mode == KM_STRUM;
     kb_accord = kid.mode == KM_ACCORD;
     for (s = 0; s < 3u; s++) {
@@ -1472,6 +1479,7 @@ static void kw_notes(uint32_t notes)
             if (j < 2u && (col[j] >> 5) == kw.stamp)
                 continue;
             col[col[0] ? 1 : 0] = n;
+            kw_undo.valid = 0;
             kw_changed();
             continue;
         }
@@ -1488,17 +1496,39 @@ static void kw_notes(uint32_t notes)
             col[col[0] ? 1 : 0] = n;                              /* (a third replaces the second) */
             kw.adv = 1;
         }
+        kw_undo.valid = 0;
         kw_changed();
     }
 }
 
+static void kw_undo_remember(void)
+{
+    memcpy(kw_undo.note, kw.note, sizeof kw.note);
+    kw_undo.cur = kw.cur;
+    kw_undo.floor = kw.floor;
+    kw_undo.valid = 1;
+}
+
+static void kw_undo_restore(void)
+{
+    if (!kw_undo.valid)
+        return;
+    memcpy(kw.note, kw_undo.note, sizeof kw.note);
+    kw.cur = kw_undo.cur;
+    kw.floor = kw_undo.floor;
+    kw.adv = kw_undo.valid = 0;
+    kw_changed();
+    kid_hint(KH_UNDONE);
+}
+
 static void kw_clear(void)
 {
-    uint32_t c;
-    for (c = 0; c < KW_COLS; c++)
-        kw.note[c][0] = kw.note[c][1] = 0;
+    if (!kw_empty())
+        kw_undo_remember();
+    memset(kw.note, 0, sizeof kw.note);
     kw.cur = 0;
     kw.floor = 0;
+    kw.adv = 0;
     kw_changed();
 }
 
@@ -2118,7 +2148,7 @@ static void kid_input(void)
             }
             kid_hint(KH_BEAT);
             break;
-        case B_REC:                               /* the next sky, with a party; WRITE: held 2 s, a new song */
+        case B_REC:                               /* the next sky (in WRITE, tap to undo or hold 2 s for a new song) */
             if (kw.on) {
                 kw.clear_on = 1;
                 kw.clear_ms = fm1_ms | 1u;
@@ -2197,8 +2227,12 @@ static void kid_input(void)
         kid.home_down = 0;
         if (kw.on) {                              /* (playing: the column being played) */
             uint32_t c = song.playing ? (uint32_t)kw_at() % KW_COLS : kw.cur;
-            kw.note[c][0] = kw.note[c][1] = 0;
-            kw_changed();
+            if (kw.note[c][0] || kw.note[c][1]) {
+                kw_undo_remember();
+                kw.note[c][0] = kw.note[c][1] = 0;
+                kw_changed();
+                kid_hint(KH_NONE);
+            }
         } else {
             kid_friend(kid.fr + 1u + rng() % (KID_N - 1u));
             kid.party_ms = fm1_ms | 1u;
@@ -2206,9 +2240,10 @@ static void kid_input(void)
         }
     }
     if (kw.on) {
-        if (kw.clear_on && !((held >> panel.btn[B_REC]) & 1u))
+        if (kw.clear_on && !((held >> panel.btn[B_REC]) & 1u)) {
             kw.clear_on = 0;
-        if (kw.clear_on && (fm1_ms | 1u) - kw.clear_ms > 2000u) {  /* REC held 2 s: a new song */
+            kw_undo_restore();
+        } else if (kw.clear_on && (fm1_ms | 1u) - kw.clear_ms > 2000u) {  /* REC held 2 s: a new song */
             kw.clear_on = 0;
             kw_clear();
             kid_hint(KH_NEWSONG);
@@ -2806,8 +2841,16 @@ static uint32_t kid_band_setup(uint32_t now)
     if (kw.on && !(hint && (kid.hint == KH_SPEED || kid.hint == KH_NIGHT || kid.hint == KH_VOLUME || kid.hint == KH_LOOK || kid.hint == KH_HAT || kid.hint == KH_KEY))) {
         /* WRITE: the friend to write with, and a word */
         kf.band = KB_NAME;
-        kf.txt = hint && kid.hint == KH_BEAT ? (kw.beat ? KID_BEATS[(kw.beat - 1u) % KB_COUNT].name : "NO BEAT") :
-                 hint && kid.hint == KH_NEWSONG ? "NEW SONG" : song.playing ? "LOOP" : "WRITE";
+        if (hint && kid.hint == KH_BEAT)
+            kf.txt = kw.beat ? KID_BEATS[(kw.beat - 1u) % KB_COUNT].name : "NO BEAT";
+        else if (hint && kid.hint == KH_NEWSONG)
+            kf.txt = "NEW SONG";
+        else if (hint && kid.hint == KH_UNDONE)
+            kf.txt = "UNDONE";
+        else if (kw_undo.valid && now - kw.edit_ms < KW_UNDO_HINT_MS)
+            kf.txt = "REC UNDO";
+        else
+            kf.txt = song.playing ? "LOOP" : "WRITE";
         kf.bt.sc = str_len(kf.txt) * (4u * KID_ADV) - 4u <= 176u ? 4 : str_len(kf.txt) * (3u * KID_ADV) - 3u <= 176u ? 3 : 2;   /* (2: a translation) */
         kf.ink = KID_WHITE;
         kf.bg = RGB(150, 110, 230);

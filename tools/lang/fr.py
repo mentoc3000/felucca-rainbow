@@ -40,6 +40,7 @@ WORDS = {
     # games, secrets, the grown-ups' settings
     "YES!": "OUI!", "TRY AGAIN": "ENCORE", "LISTEN": "ÉCOUTE", "YOUR TURN": "À TOI", "YAY!": "BRAVO!",
     "STAR!": "ÉTOILE!", "NEW HAT!": "NOUVEAU CHAPEAU!", "NEW FRIEND!": "NOUVEL AMI!", "NEW SKY!": "NOUVEAU CIEL!",
+    "REC UNDO": "REC ANNULE", "UNDONE": "RÉTABLI",
     "NEW SONG": "NOUVEL AIR", "NO HAT": "SANS CHAPEAU", "STARS": "ÉTOILES", "LOOK-ALIKES OFF": "SOSIES NON",
     "STAFF ON": "PORTÉE OUI", "STAFF OFF": "PORTÉE NON", "KEY": "TON",
     "LOOK-ALIKES ON": "SOSIES OUI", "HI!": "SALUT!", "HI": "SALUT", "YOUR NAME": "TON NOM",

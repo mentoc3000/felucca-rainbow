@@ -132,6 +132,7 @@ friends, the way Mario Paint's composer did, and plays it back.
 | Keys, while it plays | Loop and layer: a key is written where the beat is (into the nearest column), and is heard the next time round. The band says LOOP. PRESETS picks another friend for the next layer (up to three friends, two notes a column). A note is only added while it plays; HOME wipes the column being played. |
 | SEQ | A beat under it: none, then each of the 21 (drums only). |
 | SELECT | Slower or faster. |
+| REC tap | Brings back what HOME or a long press of REC just cleared. You get one undo, until you edit the notes, change the band, or leave WRITE. |
 | REC held 2 s | A new, empty song. |
 | SAVE | Back to playing. |
 

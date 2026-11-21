@@ -43,6 +43,7 @@ WORDS = {
     # games, secrets, the grown-ups' settings
     "YES!": "JA!", "TRY AGAIN": "PRØV IGEN", "LISTEN": "LYT", "YOUR TURN": "DIN TUR", "YAY!": "HURRA!",
     "STAR!": "STJERNE!", "NEW HAT!": "NY HAT!", "NEW FRIEND!": "NY VEN!", "NEW SKY!": "NY HIMMEL!",
+    "REC UNDO": "REC FORTRYD", "UNDONE": "GENDANNET",
     "NEW SONG": "NY SANG", "NO HAT": "INGEN HAT", "STARS": "STJERNER", "LOOK-ALIKES OFF": "KOPIER FRA",
     "STAFF ON": "NODER TIL", "STAFF OFF": "NODER FRA", "KEY": "TONEART",
     "LOOK-ALIKES ON": "KOPIER TIL", "HI!": "HEJ!", "HI": "HEJ", "YOUR NAME": "DIT NAVN",
