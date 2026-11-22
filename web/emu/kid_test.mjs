@@ -105,7 +105,60 @@ check("PRESETS: another friend (the band shows its name)", band() !== name0);
   check("after about 6 s of quiet the staff goes", !lines());
   press(14);
   check("and starts again from the left when playing again", lines() && px(56, KID_Y(4)) === G_TEAL && px(77, KID_Y(4)) !== G_TEAL);
-  render(6500);
+
+}
+
+
+// Live staff and chord names, on a fresh melodic friend in the build's default note language.
+{
+  const { instance: { exports: e } } = await WebAssembly.instantiate(fs.readFileSync(wasmPath), {});
+  e._initialize();
+  e.web_nor_erase();
+  e.web_boot();
+  const tick = (ms) => { for (let i = 0; i < Math.round(ms * 44.1); i += 128) e.web_render(128); };
+  const txt = (f) => {
+    let s = "";
+    for (let i = 0, c; (c = f(i)); i++) s += String.fromCharCode(c);
+    return s;
+  };
+  const play = (...keys) => {
+    e.web_keys(keys.reduce((mask, key) => mask | 1 << key, 0));
+    tick(120);
+    const names = [txt(e.web_kid_txt), txt(e.web_kid_txt2)];
+    e.web_keys(0);
+    tick(250);
+    return names;
+  };
+  const px = (x, y) => {
+    const v = new Uint16Array(e.memory.buffer, e.web_screen(), 240 * 240)[y * 240 + x];
+    return ((v & 255) << 8) | (v >> 8);
+  };
+  const col = (r, g, b) => ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+  const INK = col(52, 26, 58), EB = col(255, 184, 30), C_RED = col(236, 40, 52), G_TEAL = col(30, 176, 150);
+  const accidental = (x, y) => px(x, y) === INK || px(x + 1, y) === INK; // kana builds center the glyph a pixel to the right
+  tick(6500);
+
+  const [flat] = play(10);
+  shot("staff_flat", e);
+  check("Eb sits on the E line with a flat beside it",
+        px(56, KID_Y(2)) === EB && accidental(45, KID_Y(2) - 5) && px(47, KID_Y(2) - 3) !== INK);
+  const [cmNotes, cmName] = play(7, 10, 14);
+  check("C minor has C, E flat and G on the staff",
+        px(77, KID_Y(0)) === C_RED && px(77, KID_Y(2)) === EB && px(77, KID_Y(4)) === G_TEAL && accidental(66, KID_Y(2) - 5));
+  const [gsNotes, gsName] = play(3, 6, 10);
+  check("G sharp minor has D sharp on the D line",
+        px(98, KID_Y(1)) === EB && accidental(87, KID_Y(1) - 3) && px(98, KID_Y(2)) !== EB);
+
+  const [c] = play(7), [d] = play(9), [en] = play(11), [g] = play(14), [b] = play(6);
+  const [, cMajor] = play(7, 11, 14), [, dMinor] = play(9, 12, 16);
+  const [ebNotes, ebName] = play(10, 14, 17);
+  const major = cMajor.slice(c.length + 1), minor = dMinor.slice(d.length + 1);
+  const eb = en + "b", bb = b === "H" ? "B" : b + "b", gs = g + "#";
+  check("the band spells a single black key as E flat", flat === eb);
+  check("the band spells C minor as C Eb G", cmNotes === [c, eb, g].join(" ") && minor && cmName === c + " " + minor);
+  check("the band spells Eb major as Eb G Bb", ebNotes === [eb, g, bb].join(" ") && major && ebName === eb + " " + major);
+  check("the band keeps G sharp and D sharp in G sharp minor",
+        gsNotes === [gs, b, d + "#"].join(" ") && minor && gsName === gs + " " + minor);
 }
 
 // note values (by how long a key is held, against the beat): a tap a sixteenth (a stem, two flags), about a beat a

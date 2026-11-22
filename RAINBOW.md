@@ -106,7 +106,8 @@ singing (3 FRIENDS) play 2.5 dB softer and the ACCORDION's chords softer too, so
 
 When the child plays, a treble clef and five lines drop in at the top of the screen and write the notes as colored heads (the color of the
 letter in the band), left to right, up to 8 of them; the oldest drops off. Keys played together, or a key with ALGORITHM on (three friends), stack as a chord. A
-black key gets a sharp sign, notes below the staff get their ledger lines, and **8VA / 8VB** (or 15MA / 15MB) shows over or under the
+black key gets a sharp or flat so the note agrees with the name shown below. Notes below the staff get their
+ledger lines, and **8VA / 8VB** (or 15MA / 15MB) shows over or under the
 staff when OCT or KNOB 1 has moved the keys an octave or two up or down. Each note also shows how long it was held, against the beat: a quick tap is a sixteenth (a stem and two flags), then an eighth, a
 quarter (about one beat), a half (an open head, about two beats) and a whole (an open head with no stem). The note grows through them
 while the key is held, so a long sound can be seen to become a long note (suggested by u/theskyisfalling1 on r/MVaveFM1). The staff is
